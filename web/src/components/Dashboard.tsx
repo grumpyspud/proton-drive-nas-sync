@@ -30,9 +30,10 @@ interface Props {
     onLogout: () => void;
     appAuthEnabled: boolean;
     onSetAppPassword: () => void;
+    onLock: () => void;
 }
 
-export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled, onSetAppPassword }: Props) {
+export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled, onSetAppPassword, onLock }: Props) {
     const [pairs, setPairs] = useState<Pair[]>([]);
     const [syncing, setSyncing] = useState(false);
     const [active, setActive] = useState<Map<string, TransferState>>(new Map());
@@ -301,6 +302,11 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     <button className="btn btn-ghost" onClick={onSetAppPassword} title={appAuthEnabled ? 'Change the app password' : 'Set an app password to lock this UI'}>
                         {appAuthEnabled ? '🔒 App password' : '🔓 Set password'}
                     </button>
+                    {appAuthEnabled && (
+                        <button className="btn btn-ghost" onClick={onLock} title="Lock this browser — you'll need the app password to get back in">
+                            🔐 Lock
+                        </button>
+                    )}
                     <button className="btn btn-ghost" onClick={onToggleTheme} title="Toggle light/dark mode">
                         {theme === 'dark' ? '☀ Light' : '🌙 Dark'}
                     </button>

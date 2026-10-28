@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { getAppAuthStatus, getAuthStatus, type AppAuthStatus } from './api';
+import { appLogout, getAppAuthStatus, getAuthStatus, type AppAuthStatus } from './api';
 import { Dashboard } from './components/Dashboard';
 import { LoginView } from './components/LoginView';
 import { AppLoginView } from './components/AppLoginView';
@@ -80,6 +80,14 @@ export function App() {
                 uid={auth.uid}
                 appAuthEnabled={appAuth.enabled}
                 onSetAppPassword={() => setShowSetPassword(true)}
+                onLock={async () => {
+                    try {
+                        await appLogout();
+                    } catch {
+                        /* cookie is cleared regardless of response */
+                    }
+                    refreshAppAuth();
+                }}
                 onLogout={() => setAuth({ authenticated: false })}
             />
         );
