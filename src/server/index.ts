@@ -144,7 +144,7 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
 }
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // ---- app-level password gate helpers (cookies are parsed manually; no cookie-parser) ----
 const SESSION_COOKIE = 'pdn_session';
