@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { listDriveDir, listLocalDir, mkdirLocal } from '../api';
 import type { DirListing } from '../types';
 
@@ -26,6 +26,7 @@ export function FolderBrowser({ mode, value, placeholder, onChange }: Props) {
     const [showNew, setShowNew] = useState(false);
     const [newName, setNewName] = useState('');
     const [creating, setCreating] = useState(false);
+    const [refreshKey, setRefreshKey] = useState(0);
 
     useEffect(() => {
         let cancelled = false;
@@ -54,17 +55,19 @@ export function FolderBrowser({ mode, value, placeholder, onChange }: Props) {
             clearTimeout(timer);
             setLoading(false);
         };
-    }, [value, mode]);
+    }, [value, mode, refreshKey]);
 
-    async function createFolder(e: FormEvent) {
-        e.preventDefault();
-        if (!newName.trim()) return;
+    async function createFolder() {
+        const name = newName.trim();
+        if (!name) return;
         setCreating(true);
+        setError(null);
         try {
-            const res = await mkdirLocal(value, newName.trim());
+            await mkdirLocal(value, name);
             setNewName('');
             setShowNew(false);
-            onChange(res.path);
+            // Re-list the current directory so the new folder appears in place.
+            setRefreshKey((k) => k + 1);
         } catch (err) {
             setError((err as Error).message);
         } finally {
@@ -109,21 +112,34 @@ export function FolderBrowser({ mode, value, placeholder, onChange }: Props) {
             </div>
             {mode === 'local' &&
                 (showNew ? (
-                    <form className="browser-new" onSubmit={createFolder}>
+                    <div className="browser-new">
                         <input
                             autoFocus
                             value={newName}
                             placeholder="New folder name"
                             onChange={(e) => setNewName(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    void createFolder();
+                                }
+                            }}
                             spellCheck={false}
                         />
-                        <button type="submit" className="btn btn-primary btn-sm" disabled={creating || !newName.trim()}>
+                        <button type="button" className="btn btn-primary btn-sm" onClick={() => void createFolder()} disabled={creating || !newName.trim()}>
                             Create
                         </button>
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowNew(false)}>
+                        <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => {
+                                setShowNew(false);
+                                setNewName('');
+                            }}
+                        >
                             Cancel
                         </button>
-                    </form>
+                    </div>
                 ) : (
                     <button type="button" className="browser-row browser-new-btn" onClick={() => setShowNew(true)}>
                         <span className="browser-icon">＋</span>
