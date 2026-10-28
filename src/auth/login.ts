@@ -44,8 +44,8 @@ interface AuthResponse {
     '2FA'?: { Enabled?: number };
 }
 
-function hvHeaders(token?: string): Record<string, string> | undefined {
-    if (!token) return undefined;
+function hvHeaders(token?: string): Record<string, string> {
+    if (!token) return {};
     return {
         'x-pm-human-verification-token': token,
         'x-pm-human-verification-token-type': 'captcha',
