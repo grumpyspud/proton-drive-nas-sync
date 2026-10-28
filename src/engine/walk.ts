@@ -1,7 +1,7 @@
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { NodeType } from '@protontech/drive-sdk';
-import type { ProtonDriveClient } from '@protontech/drive-sdk';
+import type { NodeEntity, ProtonDriveClient } from '@protontech/drive-sdk';
 import { nodeName } from '../fs/files';
 
 export interface LocalEntry {
@@ -12,12 +12,40 @@ export interface LocalEntry {
     mtimeMs: number;
 }
 
-/** Recursively walks a local directory tree (files + folders). Symlinks are skipped. */
-export async function walkLocalTree(root: string): Promise<LocalEntry[]> {
+export interface DriveEntry {
+    relPath: string; // posix-style, relative to the walked folder
+    uid: string;
+    kind: 'file' | 'folder';
+    fingerprint?: string; // content fingerprint for files ('' for folders)
+    node?: NodeEntity;
+}
+
+/**
+ * Content fingerprint for a Drive file, using the best signals the listing
+ * exposes. Primary is `activeRevision.claimedDigests.sha1` (the SHA-1 the
+ * uploader declared and the SDK verified); size and modification time are
+ * fallbacks. Format: `sha1|claimedSize|mtimeMs`.
+ */
+export function driveFingerprint(node: NodeEntity): string {
+    const rev = node.activeRevision;
+    const sha1 = rev?.claimedDigests?.sha1 ?? '';
+    const size = rev?.claimedSize ?? '';
+    const mtime = (rev?.claimedModificationTime ?? node.modificationTime)?.getTime?.() ?? '';
+    return `${sha1}|${size}|${mtime}`;
+}
+
+/**
+ * Recursively walks a local directory tree (files + folders). Entries whose
+ * name starts with `excludePrefix` (default `.pdn-` — the sync engine's
+ * reserved namespace, e.g. `.pdn-trash`) are skipped. Symlinks are skipped.
+ */
+export async function walkLocalTree(root: string, options: { excludePrefix?: string } = {}): Promise<LocalEntry[]> {
+    const { excludePrefix = '.pdn-' } = options;
     const entries: LocalEntry[] = [];
     async function walk(dir: string, rel: string): Promise<void> {
         const dirents = await readdir(dir, { withFileTypes: true });
         for (const d of dirents) {
+            if (d.name.startsWith(excludePrefix)) continue;
             const abs = path.join(dir, d.name);
             const relPath = rel === '' ? d.name : `${rel}/${d.name}`;
             if (d.isDirectory()) {
@@ -34,12 +62,6 @@ export async function walkLocalTree(root: string): Promise<LocalEntry[]> {
     return entries;
 }
 
-export interface DriveEntry {
-    relPath: string; // posix-style, relative to the walked folder
-    uid: string;
-    kind: 'file' | 'folder';
-}
-
 /** Recursively walks a Drive folder tree (files + folders). */
 export async function walkDriveTree(sdk: ProtonDriveClient, folderUid: string, rel = ''): Promise<DriveEntry[]> {
     const entries: DriveEntry[] = [];
@@ -47,7 +69,13 @@ export async function walkDriveTree(sdk: ProtonDriveClient, folderUid: string, r
         const name = nodeName(child.name);
         const relPath = rel === '' ? name : `${rel}/${name}`;
         const kind = child.type === NodeType.Folder ? 'folder' : 'file';
-        entries.push({ relPath, uid: child.uid, kind });
+        entries.push({
+            relPath,
+            uid: child.uid,
+            kind,
+            fingerprint: kind === 'file' ? driveFingerprint(child) : '',
+            node: child,
+        });
         if (kind === 'folder') {
             entries.push(...(await walkDriveTree(sdk, child.uid, relPath)));
         }

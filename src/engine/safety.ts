@@ -29,14 +29,23 @@ export async function assertSourceAvailable(sourceDir: string): Promise<void> {
  * shows up as an abnormally large deletion batch, so this forces a human to
  * look before the deletions proceed.
  */
-export function checkDeletionTripwire(options: { totalTracked: number; deletions: number; thresholdPct?: number }): void {
+export function checkDeletionTripwire(options: {
+    totalTracked: number;
+    deletions: number;
+    thresholdPct?: number;
+    /** Minimum absolute deletions before the tripwire can fire (default 5). */
+    minDeletions?: number;
+}): void {
     const threshold = options.thresholdPct ?? 25;
+    const min = options.minDeletions ?? 5;
     if (options.deletions === 0) return;
     if (options.totalTracked === 0) {
         throw new SafetyError(
             `Deletion tripwire: ${options.deletions} deletion(s) requested but zero items are tracked. Refusing.`,
         );
     }
+    // Small deletions (a handful of files) are normal and never trip.
+    if (options.deletions < min) return;
     const pct = (options.deletions / options.totalTracked) * 100;
     if (pct > threshold) {
         throw new SafetyError(

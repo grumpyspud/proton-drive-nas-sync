@@ -15,6 +15,7 @@
     "m1": "tsx src/cli/m1.ts",
     "m2": "tsx src/cli/m2.ts",
     "m3": "tsx src/cli/m3.ts",
+    "m4": "tsx src/cli/m4.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json"
   },
