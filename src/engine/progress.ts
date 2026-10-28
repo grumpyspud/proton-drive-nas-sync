@@ -11,12 +11,14 @@ export interface SyncSummary {
     driveTrashed: number;
     conflicts: number;
     skipped: number;
+    failed: number;
 }
 
 export type SyncAction =
     | 'upload'
     | 'download'
     | 'skip'
+    | 'skip-error'
     | 'trash-drive'
     | 'recycle-local'
     | 'cleanup-partial'

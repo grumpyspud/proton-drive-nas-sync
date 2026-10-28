@@ -787,6 +787,10 @@ input:focus {
     background: var(--tag-warn-bg);
     color: var(--tag-warn-fg);
 }
+.tag-skip-error {
+    background: var(--alert-bg);
+    color: var(--alert-fg);
+}
 
 /* ---------- Pairs ---------- */
 .pair-list {

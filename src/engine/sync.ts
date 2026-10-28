@@ -36,6 +36,8 @@ export interface SyncResult {
     driveTrashed: number;
     conflicts: number;
     skipped: number;
+    /** Files that failed and were skipped (skip-on-error) rather than aborting the run. */
+    failed: number;
 }
 
 /** Thrown by syncOnce when a pause/stop is requested mid-cycle. */
@@ -76,7 +78,7 @@ function driveSha1(fingerprint: string | null | undefined): string {
  */
 export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress, shouldAbort, progressMinBytes = DEFAULT_PROGRESS_MIN_BYTES, allowDeletions } = options;
-    const result: SyncResult = { uploaded: 0, downloaded: 0, localRecycled: 0, driveTrashed: 0, conflicts: 0, skipped: 0 };
+    const result: SyncResult = { uploaded: 0, downloaded: 0, localRecycled: 0, driveTrashed: 0, conflicts: 0, skipped: 0, failed: 0 };
     const checkAbort = (): void => {
         if (shouldAbort?.()) throw new SyncAbortedError();
     };
@@ -320,84 +322,53 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         const inDrive = !!D;
         const inDb = !!S;
 
-        if (!inLocal && !inDrive) {
-            if (inDb) db.removeNode(pairId, relPath);
-            continue;
-        }
-
-        const parentRel = path.posix.dirname(relPath);
-        const parentUid = parentRel === '.' ? driveFolderUid : driveByRel.get(parentRel)?.uid;
-
-        // Local content hash (fast-path: reuse stored sha1 when size+mtime match).
-        let localSha1: string | null = null;
-        if (L) {
-            if (S && S.localSha1 && S.localSize === L.size && S.localMtime === L.mtimeMs) {
-                localSha1 = S.localSha1;
-            } else {
-                localSha1 = await sha1OfFile(L.absPath);
+        try {
+            if (!inLocal && !inDrive) {
+                if (inDb) db.removeNode(pairId, relPath);
+                continue;
             }
-        }
 
-        const driveFp = D?.fingerprint ?? null;
+            const parentRel = path.posix.dirname(relPath);
+            const parentUid = parentRel === '.' ? driveFolderUid : driveByRel.get(parentRel)?.uid;
 
-        // -- new local file --
-        if (inLocal && !inDrive && !inDb) {
-            if (!parentUid) throw new Error(`No parent for ${relPath}`);
-            const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'));
-            completedBytes += L.size;
-            completedFiles++;
-            db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
-            driveByRel.set(relPath, { relPath, uid, kind: 'file', fingerprint: `${localSha1}|${L.size}|${L.mtimeMs}`, node: undefined });
-            result.uploaded++;
-            onProgress?.({ type: 'item', action: 'upload', relPath });
-            log(`uploaded ${relPath}`);
-            continue;
-        }
-
-        // -- new Drive file --
-        if (!inLocal && inDrive && !inDb) {
-            await downloadTo(D.uid, relPath, path.join(localDir, relPath));
-            db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: null, localSize: null, localMtime: null });
-            result.downloaded++;
-            onProgress?.({ type: 'item', action: 'download', relPath });
-            log(`downloaded ${relPath}`);
-            continue;
-        }
-
-        // -- both new (first-sync collision) --
-        if (inLocal && inDrive && !inDb) {
-            if (localSha1 && driveSha1(driveFp) && localSha1 === driveSha1(driveFp)) {
-                db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1, localSize: L.size, localMtime: L.mtimeMs });
-                result.skipped++;
-                onProgress?.({ type: 'item', action: 'skip', relPath });
-            } else {
-                await resolveConflict(relPath, D, L, localSha1!);
-                result.conflicts++;
-                onProgress?.({ type: 'item', action: 'conflict', relPath });
+            // Local content hash (fast-path: reuse stored sha1 when size+mtime match).
+            let localSha1: string | null = null;
+            if (L) {
+                if (S && S.localSha1 && S.localSize === L.size && S.localMtime === L.mtimeMs) {
+                    localSha1 = S.localSha1;
+                } else {
+                    localSha1 = await sha1OfFile(L.absPath);
+                }
             }
-            continue;
-        }
 
-        // -- both present and previously synced --
-        if (inLocal && inDrive) {
-            const localChanged = S!.localSha1 != null && localSha1 !== S!.localSha1;
-            const driveChanged = S!.driveFingerprint != null && driveFp !== S!.driveFingerprint;
+            const driveFp = D?.fingerprint ?? null;
 
-            if (localChanged && !driveChanged) {
-                const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'));
+            // -- new local file --
+            if (inLocal && !inDrive && !inDb) {
+                if (!parentUid) throw new Error(`No parent for ${relPath}`);
+                const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'));
                 completedBytes += L.size;
                 completedFiles++;
                 db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
+                driveByRel.set(relPath, { relPath, uid, kind: 'file', fingerprint: `${localSha1}|${L.size}|${L.mtimeMs}`, node: undefined });
                 result.uploaded++;
                 onProgress?.({ type: 'item', action: 'upload', relPath });
-                log(`uploaded revision ${relPath}`);
-            } else if (!localChanged && driveChanged) {
+                log(`uploaded ${relPath}`);
+                continue;
+            }
+
+            // -- new Drive file --
+            if (!inLocal && inDrive && !inDb) {
                 await downloadTo(D.uid, relPath, path.join(localDir, relPath));
                 db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: null, localSize: null, localMtime: null });
                 result.downloaded++;
                 onProgress?.({ type: 'item', action: 'download', relPath });
                 log(`downloaded ${relPath}`);
-            } else if (localChanged && driveChanged) {
+                continue;
+            }
+
+            // -- both new (first-sync collision) --
+            if (inLocal && inDrive && !inDb) {
                 if (localSha1 && driveSha1(driveFp) && localSha1 === driveSha1(driveFp)) {
                     db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                     result.skipped++;
@@ -407,55 +378,96 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                     result.conflicts++;
                     onProgress?.({ type: 'item', action: 'conflict', relPath });
                 }
-            } else {
-                // unchanged — fill any null fingerprints with observed values
-                db.upsertNode({
-                    pairId,
-                    relPath,
-                    kind: 'file',
-                    driveUid: D.uid,
-                    driveFingerprint: driveFp ?? S!.driveFingerprint,
-                    localSha1: localSha1 ?? S!.localSha1,
-                    localSize: L.size,
-                    localMtime: L.mtimeMs,
-                });
-                result.skipped++;
-                onProgress?.({ type: 'item', action: 'skip', relPath });
+                continue;
             }
-            continue;
-        }
 
-        // -- local present, drive missing (drive deleted it) --
-        if (inLocal && !inDrive) {
-            const localChanged = S!.localSha1 != null && localSha1 !== S!.localSha1;
-            if (localChanged) {
-                if (!parentUid) throw new Error(`No parent for ${relPath}`);
-                const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'));
-                completedBytes += L.size;
-                completedFiles++;
-                db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
-                result.uploaded++;
-                onProgress?.({ type: 'item', action: 'upload', relPath });
-                log(`re-uploaded ${relPath} (Drive copy was deleted)`);
-            } else {
-                localDeletions.push({ relPath });
-            }
-            continue;
-        }
+            // -- both present and previously synced --
+            if (inLocal && inDrive) {
+                const localChanged = S!.localSha1 != null && localSha1 !== S!.localSha1;
+                const driveChanged = S!.driveFingerprint != null && driveFp !== S!.driveFingerprint;
 
-        // -- drive present, local missing (local deleted it) --
-        if (!inLocal && inDrive) {
-            const driveChanged = S!.driveFingerprint != null && driveFp !== S!.driveFingerprint;
-            if (driveChanged) {
-                await downloadTo(D.uid, relPath, path.join(localDir, relPath));
-                db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: null, localSize: null, localMtime: null });
-                result.downloaded++;
-                onProgress?.({ type: 'item', action: 'download', relPath });
-                log(`restored ${relPath} (local copy was deleted)`);
-            } else {
-                driveDeletions.push({ relPath, uid: D.uid });
+                if (localChanged && !driveChanged) {
+                    const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'));
+                    completedBytes += L.size;
+                    completedFiles++;
+                    db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
+                    result.uploaded++;
+                    onProgress?.({ type: 'item', action: 'upload', relPath });
+                    log(`uploaded revision ${relPath}`);
+                } else if (!localChanged && driveChanged) {
+                    await downloadTo(D.uid, relPath, path.join(localDir, relPath));
+                    db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: null, localSize: null, localMtime: null });
+                    result.downloaded++;
+                    onProgress?.({ type: 'item', action: 'download', relPath });
+                    log(`downloaded ${relPath}`);
+                } else if (localChanged && driveChanged) {
+                    if (localSha1 && driveSha1(driveFp) && localSha1 === driveSha1(driveFp)) {
+                        db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1, localSize: L.size, localMtime: L.mtimeMs });
+                        result.skipped++;
+                        onProgress?.({ type: 'item', action: 'skip', relPath });
+                    } else {
+                        await resolveConflict(relPath, D, L, localSha1!);
+                        result.conflicts++;
+                        onProgress?.({ type: 'item', action: 'conflict', relPath });
+                    }
+                } else {
+                    // unchanged — fill any null fingerprints with observed values
+                    db.upsertNode({
+                        pairId,
+                        relPath,
+                        kind: 'file',
+                        driveUid: D.uid,
+                        driveFingerprint: driveFp ?? S!.driveFingerprint,
+                        localSha1: localSha1 ?? S!.localSha1,
+                        localSize: L.size,
+                        localMtime: L.mtimeMs,
+                    });
+                    result.skipped++;
+                    onProgress?.({ type: 'item', action: 'skip', relPath });
+                }
+                continue;
             }
-            continue;
+
+            // -- local present, drive missing (drive deleted it) --
+            if (inLocal && !inDrive) {
+                const localChanged = S!.localSha1 != null && localSha1 !== S!.localSha1;
+                if (localChanged) {
+                    if (!parentUid) throw new Error(`No parent for ${relPath}`);
+                    const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'));
+                    completedBytes += L.size;
+                    completedFiles++;
+                    db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
+                    result.uploaded++;
+                    onProgress?.({ type: 'item', action: 'upload', relPath });
+                    log(`re-uploaded ${relPath} (Drive copy was deleted)`);
+                } else {
+                    localDeletions.push({ relPath });
+                }
+                continue;
+            }
+
+            // -- drive present, local missing (local deleted it) --
+            if (!inLocal && inDrive) {
+                const driveChanged = S!.driveFingerprint != null && driveFp !== S!.driveFingerprint;
+                if (driveChanged) {
+                    await downloadTo(D.uid, relPath, path.join(localDir, relPath));
+                    db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: null, localSize: null, localMtime: null });
+                    result.downloaded++;
+                    onProgress?.({ type: 'item', action: 'download', relPath });
+                    log(`restored ${relPath} (local copy was deleted)`);
+                } else {
+                    driveDeletions.push({ relPath, uid: D.uid });
+                }
+                continue;
+            }
+        } catch (err) {
+            // Skip-on-error: one bad file never aborts the whole sync.
+            result.failed++;
+            const reason = (err as Error)?.message ?? String(err);
+            const line = `skipped ${relPath}: ${reason}`;
+            log(line);
+            onProgress?.({ type: 'log', message: line });
+            onProgress?.({ type: 'item', action: 'skip-error', relPath });
         }
     }
 

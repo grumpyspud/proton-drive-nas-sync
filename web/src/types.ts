@@ -16,6 +16,7 @@ export interface SyncSummary {
     driveTrashed: number;
     conflicts: number;
     skipped: number;
+    failed: number;
 }
 
 export type TransferDirection = 'upload' | 'download';
@@ -24,8 +25,10 @@ export type SyncAction =
     | 'upload'
     | 'download'
     | 'skip'
+    | 'skip-error'
     | 'trash-drive'
     | 'recycle-local'
+    | 'cleanup-partial'
     | 'conflict'
     | 'mkdir-drive'
     | 'mkdir-local';
