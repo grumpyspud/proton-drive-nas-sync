@@ -1,4 +1,4 @@
-import { mkdir, rename } from 'node:fs/promises';
+import { mkdir, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { ProtonDriveClient } from '@protontech/drive-sdk';
 import { downloadFile, sha1OfFile, uploadFile, uploadFileRevision } from '../fs/files';
@@ -93,10 +93,37 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     // 1. Source-availability gate: a missing local dir halts, never mass-deletes.
     await assertSourceAvailable(localDir);
 
-    // 2. Walk both sides.
-    const local = await walkLocalTree(localDir);
-    const drive = await walkDriveTree(sdk, driveFolderUid);
+    // 2. Walk both sides, collecting leftover *.pdn-part temp files for cleanup.
+    const localPartials: Array<{ relPath: string; absPath: string }> = [];
+    const drivePartials: Array<{ relPath: string; uid: string }> = [];
+    const local = await walkLocalTree(localDir, {
+        onPartial: (relPath, absPath) => {
+            localPartials.push({ relPath, absPath });
+        },
+    });
+    const drive = await walkDriveTree(sdk, driveFolderUid, '', {
+        onPartial: (relPath, uid) => {
+            drivePartials.push({ relPath, uid });
+        },
+    });
     checkAbort();
+
+    // Remove partial-transfer leftovers (never sync incomplete data — the walk
+    // above already excluded them from the reconcile). Local = delete, Drive =
+    // trash (soft-delete), never a hard wipe.
+    for (const p of localPartials) {
+        await rm(p.absPath, { force: true });
+        onProgress?.({ type: 'item', action: 'cleanup-partial', relPath: p.relPath });
+    }
+    if (drivePartials.length > 0) {
+        await drain(sdk.trashNodes(drivePartials.map((p) => p.uid)));
+        for (const p of drivePartials) {
+            onProgress?.({ type: 'item', action: 'cleanup-partial', relPath: p.relPath });
+        }
+    }
+    if (localPartials.length || drivePartials.length) {
+        log(`cleaned ${localPartials.length} local + ${drivePartials.length} Drive partial file(s)`);
+    }
 
     const localByRel = new Map(local.map((e) => [e.relPath, e]));
     const driveByRel = new Map(drive.map((e) => [e.relPath, e]));

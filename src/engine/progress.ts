@@ -19,6 +19,7 @@ export type SyncAction =
     | 'skip'
     | 'trash-drive'
     | 'recycle-local'
+    | 'cleanup-partial'
     | 'conflict'
     | 'mkdir-drive'
     | 'mkdir-local';
