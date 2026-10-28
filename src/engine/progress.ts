@@ -36,7 +36,10 @@ export type SyncProgressEvent =
       }
     | { type: 'item'; action: SyncAction; relPath: string }
     | { type: 'sync-complete'; summary: SyncSummary }
-    | { type: 'sync-error'; message: string };
+    | { type: 'sync-error'; message: string }
+    | { type: 'sync-paused' }
+    | { type: 'sync-resumed' }
+    | { type: 'sync-stopped' };
 
 export type ProgressHandler = (event: SyncProgressEvent) => void;
 

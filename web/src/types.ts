@@ -35,7 +35,10 @@ export type SyncProgressEvent =
     | { type: 'transfer'; relPath: string; direction: TransferDirection; bytes: number; total: number; percent: number; speedBps: number }
     | { type: 'item'; action: SyncAction; relPath: string }
     | { type: 'sync-complete'; summary: SyncSummary }
-    | { type: 'sync-error'; message: string };
+    | { type: 'sync-error'; message: string }
+    | { type: 'sync-paused' }
+    | { type: 'sync-resumed' }
+    | { type: 'sync-stopped' };
 
 export interface TransferState {
     relPath: string;

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { addPair, clearTrash, deleteTrashItem, getStorage, listPairs, listTrash, logout, removePair, restoreTrashItem, startSync, updatePair, type PairSettings } from '../api';
+import { addPair, clearTrash, deleteTrashItem, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, type PairSettings } from '../api';
 import type { Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { FolderBrowser } from './FolderBrowser';
+import { LogsModal } from './LogsModal';
 
 const MAX_LOG = 200;
 
@@ -38,6 +39,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
     const [error, setError] = useState<string | null>(null);
     const [storage, setStorage] = useState<StorageInfo | null>(null);
     const [trashPair, setTrashPair] = useState<Pair | null>(null);
+    const [paused, setPaused] = useState(false);
+    const [showLogs, setShowLogs] = useState(false);
 
     const reload = useCallback(async () => {
         try {
@@ -55,10 +58,19 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
         }
     }, []);
 
+    const loadSyncStatus = useCallback(async () => {
+        try {
+            setPaused((await getSyncStatus()).paused);
+        } catch {
+            /* non-critical */
+        }
+    }, []);
+
     useEffect(() => {
         void reload();
         void loadStorage();
-    }, [reload, loadStorage]);
+        void loadSyncStatus();
+    }, [reload, loadStorage, loadSyncStatus]);
 
     useEffect(() => {
         const es = new EventSource('/api/events');
@@ -118,6 +130,18 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                     setError(ev.message);
                     setActive(new Map());
                     break;
+                case 'sync-paused':
+                    setPaused(true);
+                    setSyncing(false);
+                    setActive(new Map());
+                    break;
+                case 'sync-resumed':
+                    setPaused(false);
+                    break;
+                case 'sync-stopped':
+                    setSyncing(false);
+                    setActive(new Map());
+                    break;
             }
         };
         return () => es.close();
@@ -142,6 +166,25 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
         setError(null);
         try {
             await startSync(id);
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function togglePause() {
+        setError(null);
+        try {
+            const res = await setSyncPaused(!paused);
+            setPaused(res.paused);
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function onStop() {
+        setError(null);
+        try {
+            await stopSync();
         } catch (err) {
             setError((err as Error).message);
         }
@@ -173,6 +216,17 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                     </div>
                 </div>
                 <div className="topbar-actions">
+                    <button className={`btn ${paused ? 'btn-primary' : 'btn-ghost'}`} onClick={togglePause} title={paused ? 'Resume all syncing' : 'Pause all syncing'}>
+                        {paused ? '▶ Resume' : '⏸ Pause'}
+                    </button>
+                    {syncing && (
+                        <button className="btn btn-danger" onClick={onStop} title="Stop the current sync">
+                            ⏹ Stop
+                        </button>
+                    )}
+                    <button className="btn btn-ghost" onClick={() => setShowLogs(true)}>
+                        Logs
+                    </button>
                     <button className="btn btn-ghost" onClick={onToggleTheme} title="Toggle light/dark mode">
                         {theme === 'dark' ? '☀ Light' : '🌙 Dark'}
                     </button>
@@ -191,6 +245,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                                 <span className="badge badge-live">
                                     <span className="pulse" /> Syncing…
                                 </span>
+                            ) : paused ? (
+                                <span className="badge badge-paused">⏸ Paused</span>
                             ) : (
                                 <span className="badge">Idle</span>
                             )}
@@ -264,7 +320,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                                             <div className="pair-dir">{p.localDir}</div>
                                         </div>
                                         <div className="pair-actions">
-                                            <button className="btn btn-primary btn-sm" onClick={() => onSync(p.id)} disabled={syncing}>
+                                            <button className="btn btn-primary btn-sm" onClick={() => onSync(p.id)} disabled={syncing || paused}>
                                                 Sync
                                             </button>
                                             <button className="btn btn-ghost btn-sm" onClick={() => setTrashPair(p)}>
@@ -303,6 +359,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
             <footer className="footer">Third-party application — not affiliated with, endorsed by, or supported by Proton AG.</footer>
 
             {trashPair && <TrashModal pair={trashPair} onClose={() => setTrashPair(null)} />}
+            {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
         </div>
     );
 }

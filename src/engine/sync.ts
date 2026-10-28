@@ -21,6 +21,8 @@ export interface SyncOptions {
     log?: (msg: string) => void;
     /** Emits sync-start, per-transfer (bytes/percent/speed) and per-item events. */
     onProgress?: ProgressHandler;
+    /** When truthy, the sync halts at the next safe boundary (between files). */
+    shouldAbort?: () => boolean;
 }
 
 export interface SyncResult {
@@ -30,6 +32,14 @@ export interface SyncResult {
     driveTrashed: number;
     conflicts: number;
     skipped: number;
+}
+
+/** Thrown by syncOnce when a pause/stop is requested mid-cycle. */
+export class SyncAbortedError extends Error {
+    constructor() {
+        super('Sync aborted');
+        this.name = 'SyncAbortedError';
+    }
 }
 
 interface DriveDeletion {
@@ -56,8 +66,11 @@ function driveSha1(fingerprint: string | null | undefined): string {
  * caller emits `sync-complete` (with the returned summary) or `sync-error`.
  */
 export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
-    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress } = options;
+    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress, shouldAbort } = options;
     const result: SyncResult = { uploaded: 0, downloaded: 0, localRecycled: 0, driveTrashed: 0, conflicts: 0, skipped: 0 };
+    const checkAbort = (): void => {
+        if (shouldAbort?.()) throw new SyncAbortedError();
+    };
 
     onProgress?.({ type: 'sync-start', pairId, localDir, driveFolderName: options.driveFolderName ?? '' });
 
@@ -67,6 +80,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     // 2. Walk both sides.
     const local = await walkLocalTree(localDir);
     const drive = await walkDriveTree(sdk, driveFolderUid);
+    checkAbort();
 
     const localByRel = new Map(local.map((e) => [e.relPath, e]));
     const driveByRel = new Map(drive.map((e) => [e.relPath, e]));
@@ -120,6 +134,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
 
     const sortedFolders = [...folderRelPaths].sort((a, b) => a.split('/').length - b.split('/').length);
     for (const relPath of sortedFolders) {
+        checkAbort();
         const L = localByRel.get(relPath);
         const D = driveByRel.get(relPath);
         const S = storedByRel.get(relPath);
@@ -171,6 +186,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     for (const n of stored) if (n.kind === 'file') fileRelPaths.add(n.relPath);
 
     for (const relPath of fileRelPaths) {
+        checkAbort();
         if (isUnderDeletedFolder(relPath)) continue; // covered by the folder deletion
 
         const L = localByRel.get(relPath);
@@ -315,6 +331,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
 
     // ---- Deletion barrier: tripwire over ALL deletions, then execute (soft) ----
     const totalDeletions = driveDeletions.length + localDeletions.length;
+    checkAbort();
     if (totalDeletions > 0) {
         checkDeletionTripwire({ totalTracked: stored.length, deletions: totalDeletions, thresholdPct: deletionThresholdPct });
 

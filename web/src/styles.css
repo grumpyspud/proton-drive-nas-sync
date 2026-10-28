@@ -310,6 +310,14 @@ input:focus {
     color: var(--ink);
 }
 
+.btn-danger {
+    background: var(--danger);
+    color: #fff;
+}
+.btn-danger:hover:not(:disabled) {
+    filter: brightness(1.1);
+}
+
 .btn-block {
     width: 100%;
 }
@@ -406,6 +414,12 @@ input:focus {
     display: inline-flex;
     align-items: center;
     gap: 7px;
+}
+
+.badge-paused {
+    color: var(--warning);
+    background: var(--tag-warn-bg);
+    border-color: transparent;
 }
 
 .pulse {
@@ -958,6 +972,52 @@ select.select:focus {
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 4px;
+}
+
+.modal-wide {
+    max-width: 860px;
+}
+
+.logs-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.logs-search {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--ink);
+    background: var(--field-bg);
+}
+
+.logs-meta {
+    font-size: 12px;
+    color: var(--ink-400);
+    margin-bottom: 6px;
+}
+
+.logs-body {
+    margin: 0;
+    padding: 12px;
+    background: var(--field-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--ink-600);
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-y: auto;
+    max-height: 60vh;
+    min-height: 200px;
 }
 
 .trash-list {

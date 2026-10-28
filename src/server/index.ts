@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configDir } from '../crypto/keySource';
@@ -9,11 +9,12 @@ import { findFolder, findOrCreateFolderPath } from '../fs/folders';
 import { nodeName } from '../fs/files';
 import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
 import { NodeType } from '@protontech/drive-sdk';
-import { syncOnce } from '../engine/sync';
+import { syncOnce, SyncAbortedError } from '../engine/sync';
 import type { ProgressHandler, SyncProgressEvent } from '../engine/progress';
 import { logger } from '../logger';
 import { SyncDB, type Pair } from '../state/syncDb';
 import { authService } from './auth';
+import { appendSyncLog, querySyncLog, syncLogPath } from './syncLog';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,13 +48,17 @@ const listeners = new Set<Response>();
 function broadcast(event: SyncProgressEvent): void {
     const data = `data: ${JSON.stringify(event)}\n\n`;
     for (const res of listeners) res.write(data);
+    appendSyncLog(event);
 }
 
 let syncing = false;
+let paused = false;
+let stopRequested = false;
 
 async function runSync(pairId: string): Promise<boolean> {
-    if (syncing) return false;
+    if (syncing || paused) return false;
     syncing = true;
+    stopRequested = false;
     const db = new SyncDB(syncDbPath());
     try {
         const pair = db.getPair(pairId);
@@ -74,16 +79,23 @@ async function runSync(pairId: string): Promise<boolean> {
             driveFolderName: pair.driveFolderName,
             db,
             onProgress,
+            shouldAbort: () => paused || stopRequested,
         });
         db.markSynced(pairId);
         broadcast({ type: 'sync-complete', summary });
         return true;
     } catch (error) {
+        if (error instanceof SyncAbortedError) {
+            if (paused) broadcast({ type: 'sync-paused' });
+            else broadcast({ type: 'sync-stopped' });
+            return true;
+        }
         logger.error('Sync failed', error);
         broadcast({ type: 'sync-error', message: (error as Error).message ?? String(error) });
         return true;
     } finally {
         syncing = false;
+        stopRequested = false;
         db.close();
     }
 }
@@ -346,12 +358,56 @@ app.post('/api/pairs/:id/trash/clear', requireAuth, async (req, res) => {
 });
 
 app.post('/api/sync/:id', requireAuth, async (req, res) => {
+    if (paused) {
+        res.status(409).json({ started: false, paused: true, error: 'Syncing is paused' });
+        return;
+    }
     const started = await runSync(req.params.id as string);
     if (!started) {
         res.status(409).json({ error: 'Sync already in progress or pair not found' });
         return;
     }
     res.json({ started: true });
+});
+
+app.get('/api/sync/status', requireAuth, (_req, res) => {
+    res.json({ paused, syncing });
+});
+
+app.post('/api/sync/pause', requireAuth, (req, res) => {
+    const next = !!((req.body ?? {}) as { paused?: boolean }).paused;
+    if (next !== paused) {
+        paused = next;
+        broadcast({ type: next ? 'sync-paused' : 'sync-resumed' });
+    }
+    res.json({ paused });
+});
+
+app.post('/api/sync/stop', requireAuth, (_req, res) => {
+    if (syncing) {
+        stopRequested = true;
+        res.json({ stopping: true });
+    } else {
+        res.json({ stopping: false });
+    }
+});
+
+app.get('/api/logs', requireAuth, (req, res) => {
+    const q = (req.query.q as string) ?? '';
+    const limit = Number.parseInt((req.query.limit as string) ?? '500', 10);
+    const offset = Number.parseInt((req.query.offset as string) ?? '0', 10);
+    res.json(querySyncLog({ q, limit: Number.isFinite(limit) ? limit : 500, offset: Number.isFinite(offset) ? offset : 0 }));
+});
+
+app.get('/api/logs/download', requireAuth, (_req, res) => {
+    const p = syncLogPath();
+    if (!existsSync(p)) {
+        res.status(404).json({ error: 'No log file yet' });
+        return;
+    }
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="sync.log"');
+    createReadStream(p).pipe(res);
 });
 
 app.get('/api/events', (req, res) => {
@@ -396,7 +452,7 @@ function duePairs(db: SyncDB): Pair[] {
 }
 
 async function schedulerTick(): Promise<void> {
-    if (syncing) return;
+    if (syncing || paused) return;
     const ids: string[] = [];
     {
         const db = new SyncDB(syncDbPath());

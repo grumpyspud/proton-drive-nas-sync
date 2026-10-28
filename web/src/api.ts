@@ -70,6 +70,28 @@ export function startSync(id: string): Promise<{ started: boolean }> {
     return request(`/api/sync/${encodeURIComponent(id)}`, { method: 'POST' });
 }
 
+export function getSyncStatus(): Promise<{ paused: boolean; syncing: boolean }> {
+    return request('/api/sync/status');
+}
+
+export function setSyncPaused(paused: boolean): Promise<{ paused: boolean }> {
+    return request('/api/sync/pause', { method: 'POST', body: JSON.stringify({ paused }) });
+}
+
+export function stopSync(): Promise<{ stopping: boolean }> {
+    return request('/api/sync/stop', { method: 'POST' });
+}
+
+export interface LogQueryResult {
+    lines: string[];
+    total: number;
+    truncated: boolean;
+}
+
+export function getLogs(q: string, limit: number, offset: number): Promise<LogQueryResult> {
+    return request(`/api/logs?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`);
+}
+
 export function getStorage(): Promise<StorageInfo> {
     return request<StorageInfo>('/api/storage');
 }
