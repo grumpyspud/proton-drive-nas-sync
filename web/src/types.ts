@@ -49,3 +49,15 @@ export interface StorageInfo {
     email: string;
     displayName: string;
 }
+
+export interface DirFolder {
+    name: string;
+    path: string;
+}
+
+export interface DirListing {
+    path: string;
+    root: string;
+    parent: string | null;
+    folders: DirFolder[];
+}

@@ -3,13 +3,16 @@ import { addPair, getStorage, listPairs, logout, removePair, startSync } from '.
 import type { Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState } from '../types';
 import { formatBytes } from '../format';
 import { ProgressBar } from './ProgressBar';
+import { FolderBrowser } from './FolderBrowser';
 
 interface Props {
     uid?: string;
+    theme: 'dark' | 'light';
+    onToggleTheme: () => void;
     onLogout: () => void;
 }
 
-export function Dashboard({ uid, onLogout }: Props) {
+export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
     const [pairs, setPairs] = useState<Pair[]>([]);
     const [syncing, setSyncing] = useState(false);
     const [active, setActive] = useState<Map<string, TransferState>>(new Map());
@@ -128,9 +131,14 @@ export function Dashboard({ uid, onLogout }: Props) {
                         <p className="subtitle">Signed in as {storage?.displayName || storage?.email || uid || '…'}</p>
                     </div>
                 </div>
-                <button className="btn btn-ghost" onClick={onLogoutClick}>
-                    Sign out
-                </button>
+                <div className="topbar-actions">
+                    <button className="btn btn-ghost" onClick={onToggleTheme} title="Toggle light/dark mode">
+                        {theme === 'dark' ? '☀ Light' : '🌙 Dark'}
+                    </button>
+                    <button className="btn btn-ghost" onClick={onLogoutClick}>
+                        Sign out
+                    </button>
+                </div>
             </header>
 
             <main className="layout">
@@ -272,8 +280,14 @@ function AddPairForm({ onAdd }: { onAdd: (localDir: string, driveFolderName: str
 
     return (
         <form className="add-form" onSubmit={submit}>
-            <input placeholder="Local folder, e.g. /mnt/nas/photos" value={localDir} onChange={(e) => setLocalDir(e.target.value)} />
-            <input placeholder="Drive folder name" value={folder} onChange={(e) => setFolder(e.target.value)} />
+            <div className="field">
+                <span>Local folder (NAS)</span>
+                <FolderBrowser mode="local" value={localDir} onChange={setLocalDir} placeholder="/data" />
+            </div>
+            <div className="field">
+                <span>Proton Drive folder</span>
+                <FolderBrowser mode="drive" value={folder} onChange={setFolder} placeholder="My Files" />
+            </div>
             <button className="btn btn-primary" type="submit" disabled={busy || !localDir || !folder}>
                 Add pair
             </button>

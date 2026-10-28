@@ -3,9 +3,11 @@ import { login } from '../api';
 
 interface Props {
     onLogin: (uid?: string) => void;
+    theme: 'dark' | 'light';
+    onToggleTheme: () => void;
 }
 
-export function LoginView({ onLogin }: Props) {
+export function LoginView({ onLogin, theme, onToggleTheme }: Props) {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [needsTwoFactor, setNeedsTwoFactor] = useState(false);
@@ -46,6 +48,9 @@ export function LoginView({ onLogin }: Props) {
 
     return (
         <div className="auth-wrap">
+            <button className="btn btn-ghost theme-toggle" onClick={onToggleTheme} title="Toggle light/dark mode">
+                {theme === 'dark' ? '☀' : '🌙'}
+            </button>
             <div className="card auth-card">
                 <div className="brand">
                     <div className="brand-mark">⇄</div>

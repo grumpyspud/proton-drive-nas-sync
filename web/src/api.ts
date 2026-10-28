@@ -1,4 +1,4 @@
-import type { Pair, StorageInfo, SyncSummary } from './types';
+import type { DirListing, Pair, StorageInfo, SyncSummary } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await fetch(path, {
@@ -58,6 +58,14 @@ export function startSync(id: string): Promise<{ started: boolean }> {
 
 export function getStorage(): Promise<StorageInfo> {
     return request<StorageInfo>('/api/storage');
+}
+
+export function listLocalDir(path: string): Promise<DirListing> {
+    return request<DirListing>(`/api/fs/list?path=${encodeURIComponent(path)}`);
+}
+
+export function listDriveDir(path: string): Promise<DirListing> {
+    return request<DirListing>(`/api/drive/list?path=${encodeURIComponent(path)}`);
 }
 
 export type { StorageInfo, SyncSummary };

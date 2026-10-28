@@ -4,7 +4,10 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configDir } from '../crypto/keySource';
-import { findOrCreateFolder } from '../fs/folders';
+import { listLocalDir } from '../fs/browse';
+import { findFolder, findOrCreateFolderPath } from '../fs/folders';
+import { nodeName } from '../fs/files';
+import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce } from '../engine/sync';
 import type { ProgressHandler, SyncProgressEvent } from '../engine/progress';
 import { logger } from '../logger';
@@ -50,7 +53,7 @@ async function runSync(pairId: string): Promise<boolean> {
         const session = authService.getSession();
         // Re-resolve the Drive folder each cycle (robust against renames/recreates).
         const root = await session.sdk.getMyFilesRootFolder();
-        const driveFolderUid = await findOrCreateFolder(session.sdk, root.uid, pair.driveFolderName);
+        const driveFolderUid = await findOrCreateFolderPath(session.sdk, root.uid, pair.driveFolderName);
         db.upsertPair({ ...pair, driveFolderUid });
 
         const onProgress: ProgressHandler = (event) => broadcast(event);
@@ -127,6 +130,49 @@ app.get('/api/storage', requireAuth, async (_req, res) => {
     }
 });
 
+app.get('/api/fs/list', requireAuth, (req, res) => {
+    const requested = (req.query.path as string) ?? '';
+    try {
+        res.json(listLocalDir(requested));
+    } catch (error) {
+        res.status(400).json({ error: (error as Error).message });
+    }
+});
+
+app.get('/api/drive/list', requireAuth, async (req, res) => {
+    try {
+        const session = authService.getSession();
+        const root = await session.sdk.getMyFilesRootFolder();
+        const namePath = (req.query.path as string) ?? '';
+
+        // Walk from My Files root to the folder at namePath.
+        const segments = namePath.split('/').map((s) => s.trim()).filter(Boolean);
+        let parentUid = root.uid;
+        for (const segment of segments) {
+            const uid = await findFolder(session.sdk, parentUid, segment);
+            if (!uid) {
+                res.status(404).json({ error: `Folder "${segment}" not found` });
+                return;
+            }
+            parentUid = uid;
+        }
+
+        const folders: { name: string; path: string }[] = [];
+        for await (const child of session.sdk.iterateFolderChildren(parentUid)) {
+            if (child.type === NodeType.Folder) {
+                const name = nodeName(child.name);
+                folders.push({ name, path: segments.length ? `${namePath}/${name}` : name });
+            }
+        }
+        folders.sort((a, b) => a.name.localeCompare(b.name));
+
+        const parent = segments.length ? segments.slice(0, -1).join('/') : null;
+        res.json({ path: namePath, root: 'My Files', parent, folders });
+    } catch (error) {
+        res.status(502).json({ error: (error as Error).message ?? 'Failed to list Drive folders' });
+    }
+});
+
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
     if (!authService.isAuthenticated()) {
         res.status(401).json({ error: 'Not authenticated' });
@@ -155,7 +201,7 @@ app.post('/api/pairs', requireAuth, async (req, res) => {
     try {
         const session = authService.getSession();
         const root = await session.sdk.getMyFilesRootFolder();
-        const driveFolderUid = await findOrCreateFolder(session.sdk, root.uid, driveFolderName);
+        const driveFolderUid = await findOrCreateFolderPath(session.sdk, root.uid, driveFolderName);
         const pair = { id: pairIdFor(localDir, driveFolderName), localDir, driveFolderName, driveFolderUid };
         db.upsertPair(pair);
         res.json({ pair });
