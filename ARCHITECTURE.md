@@ -98,6 +98,28 @@ Each event is diffed against the state DB to compute the minimal operation
 (add / modify / delete / rename) on the other side. Conflicts are handled by a
 configurable policy (default: keep both, rename the incoming one).
 
+### Deletion safety (catastrophic-delete protection)
+
+Sync must never mass-delete a healthy side because the other side briefly
+"looks empty" — an unmounted NAS share, hardware failure, a dropped Drive
+connection, or expired credentials. Deletions are gated by three independent
+barriers, applied on **both** directions:
+
+1. **Source-availability gate** — before propagating any deletion, verify the
+   source actually resolves and is readable. A NAS watched folder that is
+   missing/empty/not-a-directory, or a Drive side returning auth/network
+   errors, is treated as "source unavailable", not "everything deleted": the
+   cycle halts and raises an alert instead of deleting.
+2. **Deletion-rate tripwire** — if a single cycle computes more than a
+   configurable threshold (default 25%) of a pair's items as deletions, the
+   engine pauses and requires manual confirmation in the UI before applying.
+3. **Trash-before-delete** — the engine only ever soft-deletes (Drive trash /
+   NAS recycle). Hard delete is a separate, explicit user action, so even a
+   confirmed deletion remains recoverable.
+
+These map directly onto the M1 primitives: `trashNodes` (soft) is the engine's
+only deletion verb, and `deleteNodes` (hard) is never called by the sync loop.
+
 ## Backup / restore
 
 Backup and restore are one-directional jobs layered on the same primitives as
