@@ -25,13 +25,17 @@ const CAPTURE_SNIPPET = `(function () {
   function grab(t) {
     if (done || !t) return;
     done = true;
-    console.log('PDN TOKEN:', t);
+    console.log('PDN TOKEN (len ' + t.length + '):', t);
     try { navigator.clipboard.writeText(t); } catch (e) {}
     window.prompt('Your token (copy it):', t);
   }
   function read(data) {
     try {
-      if (data && data.type === 'HUMAN_VERIFICATION_SUCCESS' && data.payload) return data.payload.token || null;
+      // verify.proton.me posts the envelope as a JSON STRING via JSON.stringify().
+      var d = data;
+      if (typeof d === 'string') d = JSON.parse(d);
+      if (d && d.type === 'HUMAN_VERIFICATION_SUCCESS' && d.payload && d.payload.token) return d.payload.token;
+      return null;
     } catch (e) { return null; }
   }
   window.addEventListener('message', function (e) { var t = read(e && e.data); if (t) grab(t); });
