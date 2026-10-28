@@ -108,6 +108,11 @@ export class SyncDB {
         return rows.map((r) => ({ id: r.id, localDir: r.local_dir, driveFolderName: r.drive_folder_name, driveFolderUid: r.drive_folder_uid }));
     }
 
+    removePair(id: string): void {
+        this.db.prepare('DELETE FROM nodes WHERE pair_id = ?').run(id);
+        this.db.prepare('DELETE FROM pairs WHERE id = ?').run(id);
+    }
+
     getNode(pairId: string, relPath: string): SyncNode | undefined {
         const row = this.db.prepare('SELECT * FROM nodes WHERE pair_id = ? AND rel_path = ?').get(pairId, relPath) as unknown as NodeRow | undefined;
         return row ? toNode(row) : undefined;

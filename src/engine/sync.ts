@@ -2,7 +2,9 @@ import { mkdir, rename } from 'node:fs/promises';
 import path from 'node:path';
 import type { ProtonDriveClient } from '@protontech/drive-sdk';
 import { downloadFile, sha1OfFile, uploadFile, uploadFileRevision } from '../fs/files';
+import type { TransferProgress } from '../fs/files';
 import type { SyncDB } from '../state/syncDb';
+import { SpeedMeter, type ProgressHandler } from './progress';
 import { assertSourceAvailable, checkDeletionTripwire } from './safety';
 import { drain } from './util';
 import { walkDriveTree, walkLocalTree } from './walk';
@@ -13,9 +15,12 @@ export interface SyncOptions {
     pairId: string;
     localDir: string;
     driveFolderUid: string;
+    driveFolderName?: string;
     db: SyncDB;
     deletionThresholdPct?: number;
     log?: (msg: string) => void;
+    /** Emits sync-start, per-transfer (bytes/percent/speed) and per-item events. */
+    onProgress?: ProgressHandler;
 }
 
 export interface SyncResult {
@@ -45,10 +50,16 @@ function driveSha1(fingerprint: string | null | undefined): string {
  * local vs Drive vs last-synced (DB). Deletions are soft on BOTH sides
  * (trash on Drive, recycle to `.pdn-trash` locally) and are gated by the
  * deletion-rate tripwire — never a hard delete.
+ *
+ * Progress: emits `sync-start`, then per-item events and per-transfer
+ * `transfer` events (cumulative bytes, percent, sliding-window speed). The
+ * caller emits `sync-complete` (with the returned summary) or `sync-error`.
  */
 export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
-    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {} } = options;
+    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress } = options;
     const result: SyncResult = { uploaded: 0, downloaded: 0, localRecycled: 0, driveTrashed: 0, conflicts: 0, skipped: 0 };
+
+    onProgress?.({ type: 'sync-start', pairId, localDir, driveFolderName: options.driveFolderName ?? '' });
 
     // 1. Source-availability gate: a missing local dir halts, never mass-deletes.
     await assertSourceAvailable(localDir);
@@ -66,9 +77,18 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     const localDeletions: LocalDeletion[] = [];
     const deletedFolderPrefixes = new Set<string>();
 
-    async function downloadTo(uid: string, localPath: string): Promise<void> {
+    /** Builds a byte-level reporter that emits `transfer` events with speed. */
+    function transferReporter(relPath: string, direction: 'upload' | 'download'): TransferProgress {
+        const meter = new SpeedMeter();
+        return (bytes, total) => {
+            const percent = total > 0 ? Math.min(100, (bytes / total) * 100) : 100;
+            onProgress?.({ type: 'transfer', relPath, direction, bytes, total, percent, speedBps: meter.sample(bytes) });
+        };
+    }
+
+    async function downloadTo(uid: string, relPath: string, localPath: string): Promise<void> {
         await mkdir(path.dirname(localPath), { recursive: true });
-        await downloadFile(sdk, uid, localPath);
+        await downloadFile(sdk, uid, localPath, transferReporter(relPath, 'download'));
     }
 
     // Resolve a conflict: local wins, but the Drive version is preserved
@@ -77,8 +97,8 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         const ts = Date.now();
         const conflictPath = path.join(localDir, `${relPath}.conflict-${ts}`);
         await mkdir(path.dirname(conflictPath), { recursive: true });
-        await downloadFile(sdk, D.uid, conflictPath);
-        const uid = await uploadFileRevision(sdk, D.uid, L.absPath);
+        await downloadFile(sdk, D.uid, conflictPath, transferReporter(relPath, 'download'));
+        const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'));
         db.upsertNode({
             pairId,
             relPath,
@@ -114,10 +134,12 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             const created = await sdk.createFolder(parentUid, path.posix.basename(relPath));
             driveByRel.set(relPath, { relPath, uid: created.uid, kind: 'folder', fingerprint: '', node: created });
             db.upsertNode({ pairId, relPath, kind: 'folder', driveUid: created.uid, driveFingerprint: null, localSha1: null, localSize: null, localMtime: null });
+            onProgress?.({ type: 'item', action: 'mkdir-drive', relPath });
             log(`created folder on Drive: ${relPath}`);
         } else if (!inLocal && inDrive && !inDb) {
             await mkdir(path.join(localDir, relPath), { recursive: true });
             db.upsertNode({ pairId, relPath, kind: 'folder', driveUid: D.uid, driveFingerprint: null, localSha1: null, localSize: null, localMtime: null });
+            onProgress?.({ type: 'item', action: 'mkdir-local', relPath });
             log(`created folder locally: ${relPath}`);
         } else if (inLocal && inDrive) {
             if (!inDb) {
@@ -181,19 +203,21 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         // -- new local file --
         if (inLocal && !inDrive && !inDb) {
             if (!parentUid) throw new Error(`No parent for ${relPath}`);
-            const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath);
+            const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'));
             db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
             driveByRel.set(relPath, { relPath, uid, kind: 'file', fingerprint: `${localSha1}|${L.size}|${L.mtimeMs}`, node: undefined });
             result.uploaded++;
+            onProgress?.({ type: 'item', action: 'upload', relPath });
             log(`uploaded ${relPath}`);
             continue;
         }
 
         // -- new Drive file --
         if (!inLocal && inDrive && !inDb) {
-            await downloadTo(D.uid, path.join(localDir, relPath));
+            await downloadTo(D.uid, relPath, path.join(localDir, relPath));
             db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: null, localSize: null, localMtime: null });
             result.downloaded++;
+            onProgress?.({ type: 'item', action: 'download', relPath });
             log(`downloaded ${relPath}`);
             continue;
         }
@@ -203,9 +227,11 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             if (localSha1 && driveSha1(driveFp) && localSha1 === driveSha1(driveFp)) {
                 db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                 result.skipped++;
+                onProgress?.({ type: 'item', action: 'skip', relPath });
             } else {
                 await resolveConflict(relPath, D, L, localSha1!);
                 result.conflicts++;
+                onProgress?.({ type: 'item', action: 'conflict', relPath });
             }
             continue;
         }
@@ -216,22 +242,26 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             const driveChanged = S!.driveFingerprint != null && driveFp !== S!.driveFingerprint;
 
             if (localChanged && !driveChanged) {
-                const uid = await uploadFileRevision(sdk, D.uid, L.absPath);
+                const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'));
                 db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                 result.uploaded++;
+                onProgress?.({ type: 'item', action: 'upload', relPath });
                 log(`uploaded revision ${relPath}`);
             } else if (!localChanged && driveChanged) {
-                await downloadTo(D.uid, path.join(localDir, relPath));
+                await downloadTo(D.uid, relPath, path.join(localDir, relPath));
                 db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: null, localSize: null, localMtime: null });
                 result.downloaded++;
+                onProgress?.({ type: 'item', action: 'download', relPath });
                 log(`downloaded ${relPath}`);
             } else if (localChanged && driveChanged) {
                 if (localSha1 && driveSha1(driveFp) && localSha1 === driveSha1(driveFp)) {
                     db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                     result.skipped++;
+                    onProgress?.({ type: 'item', action: 'skip', relPath });
                 } else {
                     await resolveConflict(relPath, D, L, localSha1!);
                     result.conflicts++;
+                    onProgress?.({ type: 'item', action: 'conflict', relPath });
                 }
             } else {
                 // unchanged — fill any null fingerprints with observed values
@@ -246,6 +276,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                     localMtime: L.mtimeMs,
                 });
                 result.skipped++;
+                onProgress?.({ type: 'item', action: 'skip', relPath });
             }
             continue;
         }
@@ -255,9 +286,10 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             const localChanged = S!.localSha1 != null && localSha1 !== S!.localSha1;
             if (localChanged) {
                 if (!parentUid) throw new Error(`No parent for ${relPath}`);
-                const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath);
+                const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'));
                 db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                 result.uploaded++;
+                onProgress?.({ type: 'item', action: 'upload', relPath });
                 log(`re-uploaded ${relPath} (Drive copy was deleted)`);
             } else {
                 localDeletions.push({ relPath });
@@ -269,9 +301,10 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         if (!inLocal && inDrive) {
             const driveChanged = S!.driveFingerprint != null && driveFp !== S!.driveFingerprint;
             if (driveChanged) {
-                await downloadTo(D.uid, path.join(localDir, relPath));
+                await downloadTo(D.uid, relPath, path.join(localDir, relPath));
                 db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: null, localSize: null, localMtime: null });
                 result.downloaded++;
+                onProgress?.({ type: 'item', action: 'download', relPath });
                 log(`restored ${relPath} (local copy was deleted)`);
             } else {
                 driveDeletions.push({ relPath, uid: D.uid });
@@ -287,7 +320,10 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
 
         if (driveDeletions.length > 0) {
             await drain(sdk.trashNodes(driveDeletions.map((d) => d.uid)));
-            for (const d of driveDeletions) db.removeNode(pairId, d.relPath);
+            for (const d of driveDeletions) {
+                db.removeNode(pairId, d.relPath);
+                onProgress?.({ type: 'item', action: 'trash-drive', relPath: d.relPath });
+            }
             result.driveTrashed += driveDeletions.length;
             log(`trashed ${driveDeletions.length} item(s) on Drive`);
         }
@@ -301,6 +337,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 await mkdir(path.dirname(dst), { recursive: true });
                 await rename(src, dst);
                 db.removeNode(pairId, d.relPath);
+                onProgress?.({ type: 'item', action: 'recycle-local', relPath: d.relPath });
             }
             result.localRecycled += localDeletions.length;
             log(`recycled ${localDeletions.length} item(s) to .pdn-trash`);

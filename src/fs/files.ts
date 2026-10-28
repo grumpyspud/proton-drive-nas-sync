@@ -1,5 +1,5 @@
-import { createReadStream } from 'node:fs';
-import { stat, writeFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { rename, rm, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
@@ -7,12 +7,15 @@ import type { FileUploader, ProtonDriveClient } from '@protontech/drive-sdk';
 
 /**
  * File-level operations on top of the Drive SDK. These primitives are the
- * foundation for M3 (backup/restore) and M4 (bidirectional sync).
+ * foundation for M3 (backup/restore), M4 (bidirectional sync) and M5 (UI).
  *
- * NOTE: upload streams from disk (constant memory); download currently buffers
- * into memory and writes once (fine for M1 test files). M3 will stream download
- * to disk for large files.
+ * Upload streams from disk and download streams TO disk (constant memory, safe
+ * for large NAS files). Both accept an `onProgress(bytes, total)` callback so
+ * the sync engine can surface live % + speed in the UI.
  */
+
+/** `bytes` is cumulative, `total` is the full transfer size in bytes. */
+export type TransferProgress = (bytes: number, total: number) => void;
 
 async function hashFile(path: string, algorithm: string): Promise<string> {
     const hash = createHash(algorithm);
@@ -66,6 +69,7 @@ export async function uploadFile(
     parentFolderUid: string,
     name: string,
     localPath: string,
+    onProgress?: TransferProgress,
 ): Promise<string> {
     const stats = await stat(localPath);
     const expectedSha1 = await sha1OfFile(localPath);
@@ -77,7 +81,7 @@ export async function uploadFile(
         modificationTime: stats.mtime,
     });
 
-    return uploadTo(uploader, localPath);
+    return uploadTo(uploader, localPath, stats.size, onProgress);
 }
 
 /**
@@ -85,7 +89,12 @@ export async function uploadFile(
  * `getFileUploader` rejects when the name already exists, so an update must go
  * through `getFileRevisionUploader`.
  */
-export async function uploadFileRevision(sdk: ProtonDriveClient, nodeUid: string, localPath: string): Promise<string> {
+export async function uploadFileRevision(
+    sdk: ProtonDriveClient,
+    nodeUid: string,
+    localPath: string,
+    onProgress?: TransferProgress,
+): Promise<string> {
     const stats = await stat(localPath);
     const expectedSha1 = await sha1OfFile(localPath);
 
@@ -96,41 +105,63 @@ export async function uploadFileRevision(sdk: ProtonDriveClient, nodeUid: string
         modificationTime: stats.mtime,
     });
 
-    return uploadTo(uploader, localPath);
+    return uploadTo(uploader, localPath, stats.size, onProgress);
 }
 
-async function uploadTo(uploader: FileUploader, localPath: string): Promise<string> {
+async function uploadTo(
+    uploader: FileUploader,
+    localPath: string,
+    total: number,
+    onProgress?: TransferProgress,
+): Promise<string> {
     const stream = Readable.toWeb(createReadStream(localPath)) as unknown as ReadableStream<Uint8Array>;
-    const controller = await uploader.uploadFromStream(stream, []);
+    const controller = await uploader.uploadFromStream(stream, [], (uploadedBytes: number) =>
+        onProgress?.(uploadedBytes, total),
+    );
     const { nodeUid } = await controller.completion();
     return nodeUid;
 }
 
 /**
  * Downloads a file to `localPath`, verifying integrity (signature + decryption).
- * Throws if signature verification flags an issue.
+ * Streams to a temp file then renames into place (atomic — no partial files on
+ * failure). Throws if signature verification flags an issue.
  */
 export async function downloadFile(
     sdk: ProtonDriveClient,
     nodeUid: string,
     localPath: string,
+    onProgress?: TransferProgress,
 ): Promise<void> {
     const downloader = await sdk.getFileDownloader(nodeUid);
-    const chunks: Uint8Array[] = [];
+    const claimedSize = downloader.getClaimedSizeInBytes();
+    const tmpPath = `${localPath}.pdn-part`;
+    const out = createWriteStream(tmpPath);
+    let received = 0;
+
     const stream = new WritableStream<Uint8Array>({
         write: (chunk) => {
-            chunks.push(chunk);
+            received += chunk.byteLength;
+            onProgress?.(received, claimedSize ?? received);
+            if (!out.write(Buffer.from(chunk))) {
+                return new Promise<void>((resolve) => out.once('drain', () => resolve()));
+            }
         },
     });
 
     const controller = downloader.downloadToStream(stream);
     await controller.completion();
+    await new Promise<void>((resolve, reject) => {
+        out.end(() => resolve());
+        out.on('error', reject);
+    });
 
     if (controller.isDownloadCompleteWithSignatureIssues()) {
+        await rm(tmpPath, { force: true });
         throw new Error('Download completed with signature verification issues');
     }
 
-    await writeFile(localPath, Buffer.concat(chunks));
+    await rename(tmpPath, localPath);
 }
 
 export function nodeName(name: { ok: boolean } & Record<string, unknown>): string {
