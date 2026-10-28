@@ -1,7 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { CryptoProxy } from '@protontech/crypto';
-import type { CryptoApiInterface } from '@protontech/crypto';
-import { computeKeyPassword, generateKeySalt, getRandomSrpVerifier, getSrp } from '@protontech/crypto/srp';
 import { MemoryCache, ProtonDriveClient } from '@protontech/drive-sdk';
 import { ApiClient } from '../../vendor/proton-drive-sdk-account/apiClient';
 import { AccountApi } from '../../vendor/proton-drive-sdk-account/accountApi';
@@ -12,8 +9,8 @@ import type { Logger } from '../logger';
 import { APP_VERSION, BASE_URL, SDK_VERSION } from '../config';
 import { telemetry } from '../logger';
 import { DriveAccountAdapter } from './accountAdapter';
+import { createOpenPGPBackend, type CryptoBackend } from './cryptoBackend';
 import { HTTPClient } from './httpClient';
-import { initOpenPGPCryptoModule } from './crypto';
 
 export interface ProtonSession {
     credentials: SessionCredentials;
@@ -28,12 +25,12 @@ export interface ProtonSession {
 
 /**
  * Wires the vendored account module together with the Drive SDK, mirroring the
- * reference CLI's `init()` + `initApi()`.
+ * reference CLI's `init()` + `initApi()`. All crypto flows through `backend`
+ * (defaults to the OpenPGP backend) so the upcoming crypto-model migration is a
+ * one-line swap at startup.
  */
-export function buildSession(credentials: SessionCredentials, logger: Logger): ProtonSession {
-    // Initialise the crypto endpoint first, so CryptoProxy is ready before any
-    // keyring unlock happens inside Addresses.
-    const openPGPCryptoModule = initOpenPGPCryptoModule();
+export function buildSession(credentials: SessionCredentials, logger: Logger, backend?: CryptoBackend): ProtonSession {
+    const crypto = backend ?? createOpenPGPBackend();
 
     const apiClient = new ApiClient({
         baseUrl: BASE_URL,
@@ -44,9 +41,8 @@ export function buildSession(credentials: SessionCredentials, logger: Logger): P
     });
 
     const accountApi = new AccountApi(apiClient);
-    const srp = new Srp(accountApi, { computeKeyPassword, generateKeySalt, getRandomSrpVerifier, getSrp });
-    const cryptoProxy: CryptoApiInterface = CryptoProxy;
-    const addresses = new Addresses(accountApi, credentials, cryptoProxy, logger);
+    const srp = new Srp(accountApi, crypto.srpApi);
+    const addresses = new Addresses(accountApi, credentials, crypto.cryptoProxy, logger);
     const account = new DriveAccountAdapter(addresses);
     const httpClient = new HTTPClient(apiClient);
 
@@ -56,7 +52,7 @@ export function buildSession(credentials: SessionCredentials, logger: Logger): P
         entitiesCache: new MemoryCache(),
         cryptoCache: new MemoryCache(),
         telemetry,
-        openPGPCryptoModule,
+        openPGPCryptoModule: crypto.openPGPCryptoModule,
         account,
         srpModule: srp,
     });

@@ -13,6 +13,7 @@
     "dev": "tsx watch src/cli/m0.ts",
     "m0": "tsx src/cli/m0.ts",
     "m1": "tsx src/cli/m1.ts",
+    "m2": "tsx src/cli/m2.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json"
   },
