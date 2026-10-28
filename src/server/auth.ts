@@ -1,4 +1,4 @@
-import { login, MailboxPasswordRequiredError, TwoFactorRequiredError, type LoginOptions } from '../auth/login';
+import { HumanVerificationRequiredError, login, MailboxPasswordRequiredError, TwoFactorRequiredError, type LoginOptions } from '../auth/login';
 import { logger } from '../logger';
 import { resetCryptoBackend } from '../proton/cryptoBackend';
 import { buildSession, type ProtonSession } from '../proton/sdk';
@@ -8,6 +8,10 @@ export interface LoginResponse {
     authenticated: boolean;
     twoFactorRequired?: boolean;
     mailboxPasswordRequired?: boolean;
+    humanVerificationRequired?: boolean;
+    webUrl?: string;
+    humanVerificationToken?: string;
+    methods?: string[];
     uid?: string;
     error?: string;
 }
@@ -30,16 +34,25 @@ class AuthService {
         return this.session;
     }
 
-    async login(username: string, password: string, twoFactorCode?: string, mailboxPassword?: string): Promise<LoginResponse> {
+    async login(username: string, password: string, twoFactorCode?: string, mailboxPassword?: string, humanVerificationToken?: string): Promise<LoginResponse> {
         const credentials = createSessionCredentials({ persist: true });
         const session = buildSession(credentials, logger);
-        const base: LoginOptions = { username, password, twoFactorCode, mailboxPassword };
+        const base: LoginOptions = { username, password, twoFactorCode, mailboxPassword, humanVerificationToken };
         try {
             const result = await login(session.accountApi, session.apiClient, session.srp, credentials, logger, base);
             this.session = session;
             logger.info(`Logged in as ${username} (uid=${result.uid})`);
             return { authenticated: true, uid: result.uid };
         } catch (error) {
+            if (error instanceof HumanVerificationRequiredError) {
+                return {
+                    authenticated: false,
+                    humanVerificationRequired: true,
+                    webUrl: error.details.webUrl,
+                    humanVerificationToken: error.details.token,
+                    methods: error.details.methods,
+                };
+            }
             if (error instanceof TwoFactorRequiredError) {
                 return { authenticated: false, twoFactorRequired: true };
             }

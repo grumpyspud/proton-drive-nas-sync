@@ -104,12 +104,12 @@ app.get('/api/auth/status', async (_req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
     const body = req.body ?? {};
-    const { username, password, twoFactorCode, mailboxPassword } = body as Record<string, string | undefined>;
+    const { username, password, twoFactorCode, mailboxPassword, humanVerificationToken } = body as Record<string, string | undefined>;
     if (!username || !password) {
         res.status(400).json({ error: 'username and password are required' });
         return;
     }
-    const result = await authService.login(username, password, twoFactorCode, mailboxPassword);
+    const result = await authService.login(username, password, twoFactorCode, mailboxPassword, humanVerificationToken);
     res.json(result);
 });
 

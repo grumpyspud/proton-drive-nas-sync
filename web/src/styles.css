@@ -329,6 +329,64 @@ input:focus {
     margin-bottom: 14px;
 }
 
+.alert-ok {
+    background: var(--tag-ok-bg);
+    color: var(--tag-ok-fg);
+    border: 1px solid var(--tag-ok-bg);
+}
+
+.hv-box {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    padding: 12px 14px;
+    margin-bottom: 14px;
+}
+
+.hv-box p {
+    font-size: 13px;
+    color: var(--ink-600);
+    margin: 0 0 10px;
+}
+
+.hv-steps {
+    margin: 0 0 12px;
+    padding-left: 20px;
+    font-size: 13px;
+    color: var(--ink-600);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.hv-steps code {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 12px;
+}
+
+.hv-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.hv-snippet {
+    background: var(--field-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--ink-600);
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0 0 12px;
+    overflow-x: auto;
+}
+
 .badge {
     font-size: 12px;
     font-weight: 600;
