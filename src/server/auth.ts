@@ -1,5 +1,6 @@
 import { login, MailboxPasswordRequiredError, TwoFactorRequiredError, type LoginOptions } from '../auth/login';
 import { logger } from '../logger';
+import { resetCryptoBackend } from '../proton/cryptoBackend';
 import { buildSession, type ProtonSession } from '../proton/sdk';
 import { createSessionCredentials } from '../session';
 
@@ -74,6 +75,7 @@ class AuthService {
             await this.session.credentials.signOut().catch(() => {});
         }
         this.session = null;
+        resetCryptoBackend();
         logger.info('Logged out');
     }
 }

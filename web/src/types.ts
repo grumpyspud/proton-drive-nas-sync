@@ -41,3 +41,11 @@ export interface TransferState {
     percent: number;
     speedBps: number;
 }
+
+export interface StorageInfo {
+    usedBytes: number;
+    maxBytes: number;
+    driveBytes: number;
+    email: string;
+    displayName: string;
+}

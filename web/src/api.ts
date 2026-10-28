@@ -1,4 +1,4 @@
-import type { Pair, SyncSummary } from './types';
+import type { Pair, StorageInfo, SyncSummary } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await fetch(path, {
@@ -56,4 +56,8 @@ export function startSync(id: string): Promise<{ started: boolean }> {
     return request(`/api/sync/${encodeURIComponent(id)}`, { method: 'POST' });
 }
 
-export type { SyncSummary };
+export function getStorage(): Promise<StorageInfo> {
+    return request<StorageInfo>('/api/storage');
+}
+
+export type { StorageInfo, SyncSummary };

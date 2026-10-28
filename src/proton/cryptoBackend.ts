@@ -25,13 +25,31 @@ export interface CryptoBackend {
     readonly srpApi: SrpApiInterface;
 }
 
-/** The current (pre-migration) OpenPGP backend. */
+/** The current (pre-migration) OpenPGP backend. Initialised once per process —
+ *  the crypto package's `CryptoProxy` endpoint is a process-global singleton
+ *  that throws "already initialised" if `setEndpoint` is called twice. */
+let cachedBackend: CryptoBackend | undefined;
+
 export function createOpenPGPBackend(): CryptoBackend {
+    if (cachedBackend) return cachedBackend;
     const openPGPCryptoModule = initOpenPGPCryptoModule();
-    return {
+    cachedBackend = {
         name: 'openpgp',
         openPGPCryptoModule,
         cryptoProxy: CryptoProxy,
         srpApi: { computeKeyPassword, generateKeySalt, getRandomSrpVerifier, getSrp },
     };
+    return cachedBackend;
+}
+
+/** Forget the backend and wipe the in-memory keyring so the next login
+ *  re-initialises it fresh (required for switching accounts). */
+export function resetCryptoBackend(): void {
+    if (!cachedBackend) return;
+    cachedBackend = undefined;
+    try {
+        CryptoProxy.releaseEndpoint();
+    } catch {
+        // endpoint already released
+    }
 }

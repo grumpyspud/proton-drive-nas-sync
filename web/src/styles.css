@@ -444,6 +444,28 @@ input:focus {
     margin-top: 2px;
 }
 
+/* ---------- Storage ---------- */
+.storage-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.storage-nums {
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+
+.storage-sub {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--ink-400);
+}
+
 /* ---------- Activity log ---------- */
 .activity-log {
     margin-top: 18px;

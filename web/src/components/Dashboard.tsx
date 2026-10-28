@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { addPair, listPairs, logout, removePair, startSync } from '../api';
-import type { Pair, SyncProgressEvent, SyncSummary, TransferState } from '../types';
+import { addPair, getStorage, listPairs, logout, removePair, startSync } from '../api';
+import type { Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState } from '../types';
+import { formatBytes } from '../format';
 import { ProgressBar } from './ProgressBar';
 
 interface Props {
@@ -15,6 +16,7 @@ export function Dashboard({ uid, onLogout }: Props) {
     const [items, setItems] = useState<Array<{ action: string; relPath: string }>>([]);
     const [summary, setSummary] = useState<SyncSummary | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [storage, setStorage] = useState<StorageInfo | null>(null);
 
     const reload = useCallback(async () => {
         try {
@@ -24,9 +26,18 @@ export function Dashboard({ uid, onLogout }: Props) {
         }
     }, []);
 
+    const loadStorage = useCallback(async () => {
+        try {
+            setStorage(await getStorage());
+        } catch {
+            /* storage is non-critical; leave it unset on failure */
+        }
+    }, []);
+
     useEffect(() => {
         void reload();
-    }, [reload]);
+        void loadStorage();
+    }, [reload, loadStorage]);
 
     useEffect(() => {
         const es = new EventSource('/api/events');
@@ -66,6 +77,7 @@ export function Dashboard({ uid, onLogout }: Props) {
                     setSyncing(false);
                     setSummary(ev.summary);
                     setActive(new Map());
+                    void loadStorage();
                     break;
                 case 'sync-error':
                     setSyncing(false);
@@ -113,7 +125,7 @@ export function Dashboard({ uid, onLogout }: Props) {
                     <div className="brand-mark">⇄</div>
                     <div>
                         <h1>Proton Drive NAS Sync</h1>
-                        <p className="subtitle">Signed in as {uid ?? '…'}</p>
+                        <p className="subtitle">Signed in as {storage?.displayName || storage?.email || uid || '…'}</p>
                     </div>
                 </div>
                 <button className="btn btn-ghost" onClick={onLogoutClick}>
@@ -175,6 +187,7 @@ export function Dashboard({ uid, onLogout }: Props) {
                 </section>
 
                 <section className="col col-side">
+                    {storage && <StorageCard storage={storage} />}
                     <div className="card">
                         <h2>Folder pairs</h2>
                         <AddPairForm onAdd={onAdd} />
@@ -211,6 +224,30 @@ function Stat({ label, value }: { label: string; value: number }) {
         <div className="stat">
             <div className="stat-value">{value}</div>
             <div className="stat-label">{label}</div>
+        </div>
+    );
+}
+
+function StorageCard({ storage }: { storage: StorageInfo }) {
+    const max = storage.maxBytes;
+    const pct = max > 0 ? Math.min(100, (storage.driveBytes / max) * 100) : 0;
+    const showTotal = storage.usedBytes > 0 && storage.usedBytes !== storage.driveBytes;
+    return (
+        <div className="card">
+            <h2>Storage</h2>
+            <div className="storage-head">
+                <span className="storage-nums">
+                    {formatBytes(storage.driveBytes)} <span className="muted">of</span> {formatBytes(storage.maxBytes)}
+                </span>
+                <span className="pct">{pct.toFixed(1)}%</span>
+            </div>
+            <div className="progress-track">
+                <div className="progress-fill fill-upload" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="storage-sub">
+                {storage.displayName || storage.email}
+                {showTotal && <> · {formatBytes(storage.usedBytes)} used across all products</>}
+            </div>
         </div>
     );
 }

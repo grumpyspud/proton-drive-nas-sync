@@ -13,6 +13,15 @@ import { authService } from './auth';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+interface StorageUser {
+    UsedSpace?: number;
+    MaxSpace?: number;
+    ProductUsedSpace?: { Drive?: number };
+    Email?: string;
+    DisplayName?: string | null;
+    Name?: string | null;
+}
+
 function pairIdFor(localDir: string, driveFolderName: string): string {
     return createHash('sha256').update(`${localDir}\n${driveFolderName}`).digest('hex').slice(0, 16);
 }
@@ -94,6 +103,28 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/logout', async (_req, res) => {
     await authService.logout();
     res.json({ ok: true });
+});
+
+app.get('/api/storage', requireAuth, async (_req, res) => {
+    try {
+        const session = authService.getSession();
+        const data = await session.accountApi.users();
+        const user = (data as { User?: StorageUser }).User;
+        if (!user) {
+            res.status(502).json({ error: 'Storage info unavailable' });
+            return;
+        }
+        const usedBytes = user.UsedSpace ?? 0;
+        res.json({
+            usedBytes,
+            maxBytes: user.MaxSpace ?? 0,
+            driveBytes: user.ProductUsedSpace?.Drive ?? usedBytes,
+            email: user.Email ?? '',
+            displayName: user.DisplayName ?? user.Name ?? '',
+        });
+    } catch (error) {
+        res.status(502).json({ error: (error as Error).message ?? 'Failed to fetch storage' });
+    }
 });
 
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
