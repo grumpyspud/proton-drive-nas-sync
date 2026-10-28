@@ -44,6 +44,27 @@ export function logout(): Promise<{ ok: boolean }> {
     return request('/api/auth/logout', { method: 'POST' });
 }
 
+export interface AppAuthStatus {
+    enabled: boolean;
+    authenticated: boolean;
+}
+
+export function getAppAuthStatus(): Promise<AppAuthStatus> {
+    return request<AppAuthStatus>('/api/app/status');
+}
+
+export function appLogin(password: string): Promise<{ ok: boolean; enabled?: boolean }> {
+    return request('/api/app/login', { method: 'POST', body: JSON.stringify({ password }) });
+}
+
+export function appLogout(): Promise<{ ok: boolean }> {
+    return request('/api/app/logout', { method: 'POST' });
+}
+
+export function setAppPassword(currentPassword: string, newPassword: string): Promise<{ ok: boolean; enabled?: boolean }> {
+    return request('/api/app/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) });
+}
+
 export function listPairs(): Promise<{ pairs: Pair[] }> {
     return request('/api/pairs');
 }

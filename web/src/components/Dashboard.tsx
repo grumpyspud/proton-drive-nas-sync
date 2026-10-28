@@ -5,6 +5,7 @@ import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { FolderBrowser } from './FolderBrowser';
 import { LogsModal } from './LogsModal';
+import { AppPasswordModal } from './AppPasswordModal';
 
 const MAX_LOG = 200;
 
@@ -27,9 +28,11 @@ interface Props {
     theme: 'dark' | 'light';
     onToggleTheme: () => void;
     onLogout: () => void;
+    appAuthEnabled: boolean;
+    onAppAuthChanged: () => void;
 }
 
-export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
+export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled, onAppAuthChanged }: Props) {
     const [pairs, setPairs] = useState<Pair[]>([]);
     const [syncing, setSyncing] = useState(false);
     const [active, setActive] = useState<Map<string, TransferState>>(new Map());
@@ -43,6 +46,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
     const [showLogs, setShowLogs] = useState(false);
     const [overall, setOverall] = useState<OverallState | null>(null);
     const [deletionHold, setDeletionHold] = useState<DeletionHold | null>(null);
+    const [showPasswordModal, setShowPasswordModal] = useState(false);
 
     const reload = useCallback(async () => {
         try {
@@ -291,6 +295,9 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                     <button className="btn btn-ghost" onClick={() => setShowLogs(true)}>
                         Logs
                     </button>
+                    <button className="btn btn-ghost" onClick={() => setShowPasswordModal(true)} title={appAuthEnabled ? 'Change the app password' : 'Set an app password to lock this UI'}>
+                        {appAuthEnabled ? '🔒 App password' : '🔓 Set password'}
+                    </button>
                     <button className="btn btn-ghost" onClick={onToggleTheme} title="Toggle light/dark mode">
                         {theme === 'dark' ? '☀ Light' : '🌙 Dark'}
                     </button>
@@ -299,6 +306,21 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                     </button>
                 </div>
             </header>
+
+            {!appAuthEnabled && (
+                <div className="app-password-banner">
+                    <span aria-hidden="true">🔓</span>
+                    <span className="app-password-msg">
+                        No app password set — anyone who can reach this address can view this dashboard and watch live sync activity.{' '}
+                        <span className="app-password-why" title="Your NAS is usually only reachable over Tailscale or your LAN, but an app password adds a second lock so that even someone on that network can't open the dashboard, see synced file names, or attempt a sign-in without it. The password is stored as a scrypt hash, never in plaintext.">
+                            Why?
+                        </span>
+                    </span>
+                    <button className="btn btn-primary btn-sm" onClick={() => setShowPasswordModal(true)}>
+                        Set password
+                    </button>
+                </div>
+            )}
 
             <main className="layout">
                 <section className="col col-main">
@@ -435,6 +457,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
 
             {trashPair && <TrashModal pair={trashPair} onClose={() => setTrashPair(null)} />}
             {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
+            {showPasswordModal && <AppPasswordModal hasPassword={appAuthEnabled} onClose={() => setShowPasswordModal(false)} onChanged={onAppAuthChanged} />}
         </div>
     );
 }

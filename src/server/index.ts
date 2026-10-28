@@ -16,6 +16,7 @@ import { logger } from '../logger';
 import { SyncDB, type Pair } from '../state/syncDb';
 import { authService } from './auth';
 import { appendSyncLog, querySyncLog, syncLogPath } from './syncLog';
+import { isAppAuthEnabled, isValidSession, issueSessionToken, loadAppAuth, setAppPassword, verifyAppPassword } from './appAuth';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -132,7 +133,98 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
 const app = express();
 app.use(express.json());
 
+// ---- app-level password gate helpers (cookies are parsed manually; no cookie-parser) ----
+const SESSION_COOKIE = 'pdn_session';
+
+function readCookie(req: Request, name: string): string | undefined {
+    const header = req.headers.cookie;
+    if (!header) return undefined;
+    for (const part of header.split(';')) {
+        const i = part.indexOf('=');
+        if (i < 0) continue;
+        if (part.slice(0, i).trim() === name) {
+            const raw = part.slice(i + 1).trim();
+            try {
+                return decodeURIComponent(raw);
+            } catch {
+                return raw;
+            }
+        }
+    }
+    return undefined;
+}
+
+function isSecureRequest(req: Request): boolean {
+    const proto = req.headers['x-forwarded-proto'];
+    return req.secure || (typeof proto === 'string' && proto === 'https');
+}
+
+function setSessionCookie(res: Response, token: string, req: Request): void {
+    const parts = [`${SESSION_COOKIE}=${token}`, 'Path=/', 'HttpOnly', 'SameSite=Strict', 'Max-Age=31536000'];
+    if (isSecureRequest(req)) parts.push('Secure');
+    res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function clearSessionCookie(res: Response, req: Request): void {
+    const parts = [`${SESSION_COOKIE}=`, 'Path=/', 'HttpOnly', 'SameSite=Strict', 'Max-Age=0'];
+    if (isSecureRequest(req)) parts.push('Secure');
+    res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function appAuthGate(req: Request, res: Response, next: NextFunction): void {
+    if (!isAppAuthEnabled()) {
+        next();
+        return;
+    }
+    if (isValidSession(readCookie(req, SESSION_COOKIE))) {
+        next();
+        return;
+    }
+    res.status(401).json({ error: 'App authentication required' });
+}
+
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+// ---- app password endpoints (unauthenticated; the gate itself is applied below) ----
+loadAppAuth();
+
+app.get('/api/app/status', (req, res) => {
+    res.json({ enabled: isAppAuthEnabled(), authenticated: isValidSession(readCookie(req, SESSION_COOKIE)) });
+});
+
+app.post('/api/app/login', (req, res) => {
+    if (!isAppAuthEnabled()) {
+        res.json({ ok: true, enabled: false });
+        return;
+    }
+    const { password } = (req.body ?? {}) as { password?: string };
+    if (!password || !verifyAppPassword(password)) {
+        res.status(401).json({ error: 'Incorrect password' });
+        return;
+    }
+    setSessionCookie(res, issueSessionToken(), req);
+    res.json({ ok: true, enabled: true });
+});
+
+app.post('/api/app/logout', (req, res) => {
+    clearSessionCookie(res, req);
+    res.json({ ok: true });
+});
+
+app.post('/api/app/password', (req, res) => {
+    const { currentPassword, newPassword } = (req.body ?? {}) as { currentPassword?: string; newPassword?: string };
+    const result = setAppPassword(currentPassword, newPassword);
+    if (!result.ok) {
+        res.status(400).json({ error: result.error });
+        return;
+    }
+    setSessionCookie(res, issueSessionToken(), req);
+    res.json({ ok: true, enabled: true });
+});
+
+// Everything under /api registered after this point requires the app password
+// (only when one is set; otherwise this is a no-op passthrough).
+app.use('/api', appAuthGate);
 
 app.get('/api/auth/status', async (_req, res) => {
     if (!authService.isAuthenticated()) await authService.resume();

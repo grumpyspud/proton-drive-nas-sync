@@ -1119,6 +1119,44 @@ select.select:focus {
     max-width: 860px;
 }
 
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.modal-hint {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--ink-400);
+}
+
+/* App-password warning banner (second-layer auth) */
+.app-password-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 28px;
+    background: var(--alert-bg);
+    border-bottom: 1px solid var(--alert-border);
+    color: var(--alert-fg);
+    font-size: 13px;
+}
+
+.app-password-banner .app-password-msg {
+    flex: 1;
+    min-width: 0;
+}
+
+.app-password-why {
+    margin-left: 8px;
+    font-weight: 600;
+    text-decoration: underline dotted;
+    cursor: help;
+    white-space: nowrap;
+}
+
 .logs-toolbar {
     display: flex;
     align-items: center;
