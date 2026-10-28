@@ -482,7 +482,11 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 onProgress?.({ type: 'item', action: 'trash-drive', relPath: d.relPath });
             }
             result.driveTrashed += driveDeletions.length;
-            log(`trashed ${driveDeletions.length} item(s) on Drive`);
+            {
+                const msg = `trashed ${driveDeletions.length} item(s) on Drive`;
+                log(msg);
+                onProgress?.({ type: 'log', message: msg });
+            }
         }
 
         if (localDeletions.length > 0) {
@@ -497,7 +501,11 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 onProgress?.({ type: 'item', action: 'recycle-local', relPath: d.relPath });
             }
             result.localRecycled += localDeletions.length;
-            log(`recycled ${localDeletions.length} item(s) to .pdn-trash`);
+            {
+                const msg = `recycled ${localDeletions.length} item(s) to .pdn-trash`;
+                log(msg);
+                onProgress?.({ type: 'log', message: msg });
+            }
         }
     }
 
