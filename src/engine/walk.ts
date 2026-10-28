@@ -54,7 +54,9 @@ export async function walkLocalTree(root: string, options: { excludePrefix?: str
     async function walk(dir: string, rel: string): Promise<void> {
         const dirents = await readdir(dir, { withFileTypes: true });
         for (const d of dirents) {
-            if (d.name.startsWith(excludePrefix)) continue;
+            // Skip the reserved .pdn-* namespace AND leftover partial-download
+            // temp files (*.pdn-part) — never sync incomplete data.
+            if (d.name.startsWith(excludePrefix) || d.name.endsWith('.pdn-part')) continue;
             const abs = path.join(dir, d.name);
             const relPath = rel === '' ? d.name : `${rel}/${d.name}`;
             if (d.isDirectory()) {
@@ -76,6 +78,9 @@ export async function walkDriveTree(sdk: ProtonDriveClient, folderUid: string, r
     const entries: DriveEntry[] = [];
     for await (const child of sdk.iterateFolderChildren(folderUid)) {
         const name = nodeName(child.name);
+        // Never sync partial-transfer artifacts a prior interrupted transfer
+        // may have left on Drive.
+        if (name.endsWith('.pdn-part')) continue;
         const relPath = rel === '' ? name : `${rel}/${name}`;
         const kind = child.type === NodeType.Folder ? 'folder' : 'file';
         entries.push({

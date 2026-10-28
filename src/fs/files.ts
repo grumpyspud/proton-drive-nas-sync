@@ -149,19 +149,23 @@ export async function downloadFile(
         },
     });
 
-    const controller = downloader.downloadToStream(stream);
-    await controller.completion();
-    await new Promise<void>((resolve, reject) => {
-        out.end(() => resolve());
-        out.on('error', reject);
-    });
+    try {
+        const controller = downloader.downloadToStream(stream);
+        await controller.completion();
+        await new Promise<void>((resolve, reject) => {
+            out.end(() => resolve());
+            out.on('error', reject);
+        });
 
-    if (controller.isDownloadCompleteWithSignatureIssues()) {
-        await rm(tmpPath, { force: true });
-        throw new Error('Download completed with signature verification issues');
+        if (controller.isDownloadCompleteWithSignatureIssues()) {
+            throw new Error('Download completed with signature verification issues');
+        }
+
+        await rename(tmpPath, localPath);
+    } catch (err) {
+        await rm(tmpPath, { force: true }).catch(() => {});
+        throw err;
     }
-
-    await rename(tmpPath, localPath);
 }
 
 export function nodeName(name: { ok: boolean } & Record<string, unknown>): string {
