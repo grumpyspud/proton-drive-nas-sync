@@ -367,19 +367,6 @@ app.post('/api/pairs/:id/trash/clear', requireAuth, async (req, res) => {
     }
 });
 
-app.post('/api/sync/:id', requireAuth, async (req, res) => {
-    if (paused) {
-        res.status(409).json({ started: false, paused: true, error: 'Syncing is paused' });
-        return;
-    }
-    const started = await runSync(req.params.id as string);
-    if (!started) {
-        res.status(409).json({ error: 'Sync already in progress or pair not found' });
-        return;
-    }
-    res.json({ started: true });
-});
-
 app.get('/api/sync/status', requireAuth, (_req, res) => {
     res.json({ paused, syncing });
 });
@@ -400,6 +387,19 @@ app.post('/api/sync/stop', requireAuth, (_req, res) => {
     } else {
         res.json({ stopping: false });
     }
+});
+
+app.post('/api/sync/:id', requireAuth, async (req, res) => {
+    if (paused) {
+        res.status(409).json({ started: false, paused: true, error: 'Syncing is paused' });
+        return;
+    }
+    const started = await runSync(req.params.id as string);
+    if (!started) {
+        res.status(409).json({ error: 'Sync already in progress or pair not found' });
+        return;
+    }
+    res.json({ started: true });
 });
 
 app.get('/api/logs', requireAuth, (req, res) => {
