@@ -230,7 +230,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                                         .reverse()
                                         .map((it, i) => (
                                             <li key={i}>
-                                                <span className={`tag tag-${it.action}`}>{it.action}</span> {it.relPath}
+                                                <span className={`tag tag-${it.action}`}>{it.action}</span>
+                                                <span className="log-path">{it.relPath}</span>
                                             </li>
                                         ))}
                                 </ul>
