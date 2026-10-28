@@ -488,8 +488,8 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({ error: (err as Error).message ?? 'Internal error' });
 });
 
-// ---- background scheduler: real-time (fixed 10s poll) + auto-sync (interval) ----
-const REAL_TIME_INTERVAL_MS = 10_000;
+// ---- background scheduler: real-time (fixed 60s poll) + auto-sync (interval) ----
+const REAL_TIME_INTERVAL_MS = 60_000;
 
 function duePairs(db: SyncDB): Pair[] {
     const now = Date.now();
@@ -501,7 +501,9 @@ function duePairs(db: SyncDB): Pair[] {
 }
 
 async function schedulerTick(): Promise<void> {
-    if (syncing || paused) return;
+    // Never auto-trigger while a sync is already running (manual or scheduled),
+    // while paused, or while a deletion confirmation is awaiting the user.
+    if (syncing || paused || pendingDeletion) return;
     const ids: string[] = [];
     {
         const db = new SyncDB(syncDbPath());

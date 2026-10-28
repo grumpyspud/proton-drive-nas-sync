@@ -683,7 +683,7 @@ function AddPairForm({ onAdd }: { onAdd: (localDir: string, driveFolderName: str
             <div className="field">
                 <span>Sync schedule</span>
                 <div className="toggle-row">
-                    <Toggle label="Real-time (10s)" checked={realTime} onChange={setRealTime} />
+                    <Toggle label="Real-time (1 min)" checked={realTime} onChange={setRealTime} />
                     <Toggle label="Auto-sync" checked={autoSync} onChange={setAutoSync} />
                 </div>
                 {autoSync && (
