@@ -7,6 +7,7 @@ import { configDir } from '../crypto/keySource';
 import { listLocalDir } from '../fs/browse';
 import { findFolder, findOrCreateFolderPath } from '../fs/folders';
 import { nodeName } from '../fs/files';
+import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
 import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce } from '../engine/sync';
 import type { ProgressHandler, SyncProgressEvent } from '../engine/progress';
@@ -257,6 +258,80 @@ app.delete('/api/pairs/:id', requireAuth, (req, res) => {
         res.json({ ok: true });
     } finally {
         db.close();
+    }
+});
+
+function getPairOrNull(id: string): Pair | undefined {
+    const db = new SyncDB(syncDbPath());
+    try {
+        return db.getPair(id);
+    } finally {
+        db.close();
+    }
+}
+
+app.get('/api/pairs/:id/trash', requireAuth, (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    try {
+        res.json({ items: listTrash(pair.localDir) });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+app.post('/api/pairs/:id/trash/restore', requireAuth, async (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    const { ts, relPath } = (req.body ?? {}) as { ts?: string; relPath?: string };
+    if (!ts || !relPath) {
+        res.status(400).json({ error: 'ts and relPath are required' });
+        return;
+    }
+    try {
+        const restoredTo = await restoreTrashItem(pair.localDir, ts, relPath);
+        res.json({ ok: true, restoredTo });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+app.post('/api/pairs/:id/trash/delete', requireAuth, async (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    const { ts, relPath } = (req.body ?? {}) as { ts?: string; relPath?: string };
+    if (!ts || !relPath) {
+        res.status(400).json({ error: 'ts and relPath are required' });
+        return;
+    }
+    try {
+        await deleteTrashItem(pair.localDir, ts, relPath);
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+app.post('/api/pairs/:id/trash/clear', requireAuth, async (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    try {
+        await clearTrash(pair.localDir);
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
     }
 });
 

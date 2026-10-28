@@ -1,4 +1,4 @@
-import type { DirListing, Pair, StorageInfo, SyncSummary } from './types';
+import type { DirListing, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await fetch(path, {
@@ -76,6 +76,22 @@ export function listLocalDir(path: string): Promise<DirListing> {
 
 export function listDriveDir(path: string): Promise<DirListing> {
     return request<DirListing>(`/api/drive/list?path=${encodeURIComponent(path)}`);
+}
+
+export function listTrash(id: string): Promise<{ items: TrashItem[] }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/trash`);
+}
+
+export function restoreTrashItem(id: string, ts: number, relPath: string): Promise<{ ok: boolean }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/trash/restore`, { method: 'POST', body: JSON.stringify({ ts: String(ts), relPath }) });
+}
+
+export function deleteTrashItem(id: string, ts: number, relPath: string): Promise<{ ok: boolean }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/trash/delete`, { method: 'POST', body: JSON.stringify({ ts: String(ts), relPath }) });
+}
+
+export function clearTrash(id: string): Promise<{ ok: boolean }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/trash/clear`, { method: 'POST' });
 }
 
 export type { StorageInfo, SyncSummary };

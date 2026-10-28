@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { addPair, getStorage, listPairs, logout, removePair, startSync, updatePair, type PairSettings } from '../api';
-import type { Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState } from '../types';
+import { addPair, clearTrash, deleteTrashItem, getStorage, listPairs, listTrash, logout, removePair, restoreTrashItem, startSync, updatePair, type PairSettings } from '../api';
+import type { Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { FolderBrowser } from './FolderBrowser';
@@ -37,6 +37,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
     const [summary, setSummary] = useState<SyncSummary | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [storage, setStorage] = useState<StorageInfo | null>(null);
+    const [trashPair, setTrashPair] = useState<Pair | null>(null);
 
     const reload = useCallback(async () => {
         try {
@@ -265,6 +266,9 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                                             <button className="btn btn-primary btn-sm" onClick={() => onSync(p.id)} disabled={syncing}>
                                                 Sync
                                             </button>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => setTrashPair(p)}>
+                                                Trash
+                                            </button>
                                             <button className="btn btn-ghost btn-sm" onClick={() => onRemove(p.id)}>
                                                 Remove
                                             </button>
@@ -296,6 +300,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
             </main>
 
             <footer className="footer">Third-party application — not affiliated with, endorsed by, or supported by Proton AG.</footer>
+
+            {trashPair && <TrashModal pair={trashPair} onClose={() => setTrashPair(null)} />}
         </div>
     );
 }
@@ -342,6 +348,105 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
             </span>
             <span className="toggle-label">{label}</span>
         </label>
+    );
+}
+
+function TrashModal({ pair, onClose }: { pair: Pair; onClose: () => void }) {
+    const [items, setItems] = useState<TrashItem[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const reload = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            setItems((await listTrash(pair.id)).items);
+        } catch (err) {
+            setError((err as Error).message);
+        } finally {
+            setLoading(false);
+        }
+    }, [pair.id]);
+
+    useEffect(() => {
+        void reload();
+    }, [reload]);
+
+    async function restore(it: TrashItem) {
+        setError(null);
+        try {
+            await restoreTrashItem(pair.id, it.ts, it.relPath);
+            await reload();
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function remove(it: TrashItem) {
+        setError(null);
+        try {
+            await deleteTrashItem(pair.id, it.ts, it.relPath);
+            await reload();
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function clearAll() {
+        if (!window.confirm('Permanently delete all recycled files for this pair?')) return;
+        setError(null);
+        try {
+            await clearTrash(pair.id);
+            await reload();
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    return (
+        <div className="modal-overlay" onClick={onClose}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-head">
+                    <h2>Trash — {pair.driveFolderName}</h2>
+                    <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
+                        ✕
+                    </button>
+                </div>
+                <p className="muted">Recycled files from {pair.localDir}</p>
+                {error && <div className="alert">{error}</div>}
+                {loading ? (
+                    <div className="muted">Loading…</div>
+                ) : items.length === 0 ? (
+                    <div className="muted">Trash is empty.</div>
+                ) : (
+                    <>
+                        <ul className="trash-list">
+                            {items.map((it) => (
+                                <li key={`${it.ts}/${it.relPath}`} className="trash-item">
+                                    <div className="trash-info">
+                                        <div className="trash-name">{it.relPath}</div>
+                                        <div className="trash-meta">
+                                            {formatBytes(it.size)} · recycled {new Date(it.ts).toLocaleString()}
+                                        </div>
+                                    </div>
+                                    <div className="trash-actions">
+                                        <button className="btn btn-primary btn-sm" onClick={() => restore(it)}>
+                                            Restore
+                                        </button>
+                                        <button className="btn btn-ghost btn-sm" onClick={() => remove(it)}>
+                                            Delete
+                                        </button>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                        <button className="btn btn-ghost btn-sm" onClick={clearAll}>
+                            Clear all
+                        </button>
+                    </>
+                )}
+            </div>
+        </div>
     );
 }
 

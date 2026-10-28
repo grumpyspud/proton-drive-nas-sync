@@ -65,3 +65,10 @@ export interface DirListing {
     parent: string | null;
     folders: DirFolder[];
 }
+
+export interface TrashItem {
+    ts: number;
+    relPath: string;
+    size: number;
+    mtimeMs: number;
+}
