@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { getAppAuthStatus, getAuthStatus, type AppAuthStatus } from './api';
 import { Dashboard } from './components/Dashboard';
 import { LoginView } from './components/LoginView';
 import { AppLoginView } from './components/AppLoginView';
+import { AppPasswordModal } from './components/AppPasswordModal';
+import { RestoreModal } from './components/RestoreModal';
 
 export type Theme = 'dark' | 'light';
 
@@ -15,6 +17,8 @@ export function App() {
     const [appAuth, setAppAuth] = useState<AppAuthStatus | null>(null);
     const [auth, setAuth] = useState<AuthState | null>(null);
     const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') === 'light' ? 'light' : 'dark'));
+    const [showSetPassword, setShowSetPassword] = useState(false);
+    const [showRestore, setShowRestore] = useState(false);
 
     useEffect(() => {
         document.documentElement.dataset.theme = theme;
@@ -40,11 +44,12 @@ export function App() {
 
     const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
-    if (appAuth === null || auth === null) return <div className="splash">Loading…</div>;
-
-    // Layer 1: the app password (when set) must be unlocked before anything else.
-    if (appAuth.enabled && !appAuth.authenticated) {
-        return (
+    let view: ReactNode;
+    if (appAuth === null || auth === null) {
+        view = <div className="splash">Loading…</div>;
+    } else if (appAuth.enabled && !appAuth.authenticated) {
+        // Layer 1: app password set but not unlocked.
+        view = (
             <AppLoginView
                 theme={theme}
                 onToggleTheme={toggleTheme}
@@ -52,23 +57,50 @@ export function App() {
                     refreshAppAuth();
                     refreshProtonAuth();
                 }}
+                onRestore={() => setShowRestore(true)}
+            />
+        );
+    } else if (!auth.authenticated) {
+        // Layer 2: Proton login (set-password + restore available while logged out).
+        view = (
+            <LoginView
+                theme={theme}
+                onToggleTheme={toggleTheme}
+                onLogin={(uid) => setAuth({ authenticated: true, uid })}
+                appPasswordEnabled={appAuth.enabled}
+                onSetAppPassword={() => setShowSetPassword(true)}
+                onRestore={() => setShowRestore(true)}
+            />
+        );
+    } else {
+        view = (
+            <Dashboard
+                theme={theme}
+                onToggleTheme={toggleTheme}
+                uid={auth.uid}
+                appAuthEnabled={appAuth.enabled}
+                onSetAppPassword={() => setShowSetPassword(true)}
+                onLogout={() => setAuth({ authenticated: false })}
             />
         );
     }
 
-    // Layer 2: the Proton Drive login.
-    if (!auth.authenticated) {
-        return <LoginView theme={theme} onToggleTheme={toggleTheme} onLogin={(uid) => setAuth({ authenticated: true, uid })} />;
-    }
-
     return (
-        <Dashboard
-            theme={theme}
-            onToggleTheme={toggleTheme}
-            uid={auth.uid}
-            appAuthEnabled={appAuth.enabled}
-            onAppAuthChanged={refreshAppAuth}
-            onLogout={() => setAuth({ authenticated: false })}
-        />
+        <>
+            {view}
+            {showSetPassword && (
+                <AppPasswordModal hasPassword={appAuth?.enabled ?? false} onClose={() => setShowSetPassword(false)} onChanged={refreshAppAuth} />
+            )}
+            {showRestore && (
+                <RestoreModal
+                    onClose={() => setShowRestore(false)}
+                    onRestored={() => {
+                        setShowRestore(false);
+                        refreshAppAuth();
+                        refreshProtonAuth();
+                    }}
+                />
+            )}
+        </>
     );
 }

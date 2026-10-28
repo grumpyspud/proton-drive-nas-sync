@@ -5,10 +5,11 @@ interface Props {
     onUnlock: () => void;
     theme: 'dark' | 'light';
     onToggleTheme: () => void;
+    onRestore: () => void;
 }
 
 /** Layer-1 gate: unlock the app password before the Proton Drive login is reachable. */
-export function AppLoginView({ onUnlock, theme, onToggleTheme }: Props) {
+export function AppLoginView({ onUnlock, theme, onToggleTheme, onRestore }: Props) {
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
@@ -50,6 +51,12 @@ export function AppLoginView({ onUnlock, theme, onToggleTheme }: Props) {
                         {busy ? 'Unlocking…' : 'Unlock'}
                     </button>
                 </form>
+
+                <div className="auth-secondary">
+                    <button type="button" className="btn btn-ghost" onClick={onRestore}>
+                        Restore config from backup
+                    </button>
+                </div>
             </div>
         </div>
     );

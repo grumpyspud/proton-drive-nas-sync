@@ -1132,6 +1132,41 @@ select.select:focus {
     color: var(--ink-400);
 }
 
+.alert-ok {
+    background: var(--tag-ok-bg);
+    color: var(--tag-ok-fg);
+    border-color: var(--tag-ok-fg);
+}
+
+.auth-secondary {
+    margin-top: 14px;
+    text-align: center;
+}
+
+.backup-summary {
+    margin-bottom: 12px;
+}
+
+.backup-summary p {
+    margin: 0 0 8px;
+}
+
+.backup-actions {
+    margin-top: 8px;
+}
+
+.modal-subhead {
+    margin: 0 0 10px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.modal-divider {
+    margin: 16px 0;
+    border: 0;
+    border-top: 1px solid var(--border);
+}
+
 /* App-password warning banner (second-layer auth) */
 .app-password-banner {
     display: flex;

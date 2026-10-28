@@ -5,7 +5,7 @@ import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { FolderBrowser } from './FolderBrowser';
 import { LogsModal } from './LogsModal';
-import { AppPasswordModal } from './AppPasswordModal';
+import { BackupModal } from './BackupModal';
 
 const MAX_LOG = 200;
 
@@ -29,10 +29,10 @@ interface Props {
     onToggleTheme: () => void;
     onLogout: () => void;
     appAuthEnabled: boolean;
-    onAppAuthChanged: () => void;
+    onSetAppPassword: () => void;
 }
 
-export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled, onAppAuthChanged }: Props) {
+export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled, onSetAppPassword }: Props) {
     const [pairs, setPairs] = useState<Pair[]>([]);
     const [syncing, setSyncing] = useState(false);
     const [active, setActive] = useState<Map<string, TransferState>>(new Map());
@@ -46,7 +46,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [showLogs, setShowLogs] = useState(false);
     const [overall, setOverall] = useState<OverallState | null>(null);
     const [deletionHold, setDeletionHold] = useState<DeletionHold | null>(null);
-    const [showPasswordModal, setShowPasswordModal] = useState(false);
+    const [showBackup, setShowBackup] = useState(false);
 
     const reload = useCallback(async () => {
         try {
@@ -295,7 +295,10 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     <button className="btn btn-ghost" onClick={() => setShowLogs(true)}>
                         Logs
                     </button>
-                    <button className="btn btn-ghost" onClick={() => setShowPasswordModal(true)} title={appAuthEnabled ? 'Change the app password' : 'Set an app password to lock this UI'}>
+                    <button className="btn btn-ghost" onClick={() => setShowBackup(true)} title="Create, download, or restore an encrypted backup">
+                        💾 Backup
+                    </button>
+                    <button className="btn btn-ghost" onClick={onSetAppPassword} title={appAuthEnabled ? 'Change the app password' : 'Set an app password to lock this UI'}>
                         {appAuthEnabled ? '🔒 App password' : '🔓 Set password'}
                     </button>
                     <button className="btn btn-ghost" onClick={onToggleTheme} title="Toggle light/dark mode">
@@ -316,7 +319,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                             Why?
                         </span>
                     </span>
-                    <button className="btn btn-primary btn-sm" onClick={() => setShowPasswordModal(true)}>
+                    <button className="btn btn-primary btn-sm" onClick={onSetAppPassword}>
                         Set password
                     </button>
                 </div>
@@ -457,7 +460,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
 
             {trashPair && <TrashModal pair={trashPair} onClose={() => setTrashPair(null)} />}
             {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
-            {showPasswordModal && <AppPasswordModal hasPassword={appAuthEnabled} onClose={() => setShowPasswordModal(false)} onChanged={onAppAuthChanged} />}
+            {showBackup && <BackupModal onClose={() => setShowBackup(false)} />}
         </div>
     );
 }

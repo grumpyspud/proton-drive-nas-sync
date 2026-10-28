@@ -1,8 +1,22 @@
 import type { DirListing, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
 
+function getDeviceId(): string {
+    try {
+        const key = 'pdn_device_id';
+        let id = localStorage.getItem(key);
+        if (!id) {
+            id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `dev-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            localStorage.setItem(key, id);
+        }
+        return id;
+    } catch {
+        return 'unknown';
+    }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await fetch(path, {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-PDN-Device-Id': getDeviceId() },
         ...init,
     });
     const data = await res.json().catch(() => ({}));
@@ -151,6 +165,59 @@ export function deleteTrashItem(id: string, ts: number, relPath: string): Promis
 
 export function clearTrash(id: string): Promise<{ ok: boolean }> {
     return request(`/api/pairs/${encodeURIComponent(id)}/trash/clear`, { method: 'POST' });
+}
+
+export interface ClientFingerprint {
+    ip: string;
+    os: string;
+    browser: string;
+    browserVersion: string;
+    deviceId: string;
+}
+
+export interface BackupStatus {
+    exists: boolean;
+    createdAt: string | null;
+    size: number;
+    sha256: string;
+    creator: ClientFingerprint | null;
+    downloadCount: number;
+    lastDownload: ClientFingerprint | null;
+    lastDownloadAt: string | null;
+    warningActive: boolean;
+}
+
+export function getBackupStatus(): Promise<BackupStatus> {
+    return request<BackupStatus>('/api/backup/status');
+}
+
+export function createBackup(appPassword: string, passphrase: string, overwrite: boolean): Promise<{ ok: boolean; createdAt: string; size: number; sha256: string; hasSession: boolean }> {
+    return request('/api/backup/create', { method: 'POST', body: JSON.stringify({ appPassword, passphrase, overwrite }) });
+}
+
+export async function downloadBackup(): Promise<void> {
+    const res = await fetch('/api/backup/download', { headers: { 'X-PDN-Device-Id': getDeviceId() } });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? `Download failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'proton-drive-nas-sync-backup.pdnbak';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function acknowledgeBackupWarning(): Promise<{ ok: boolean }> {
+    return request('/api/backup/acknowledge', { method: 'POST' });
+}
+
+export function restoreBackup(appPassword: string, passphrase: string, backup?: string): Promise<{ ok: boolean; resumed: boolean }> {
+    return request('/api/restore', { method: 'POST', body: JSON.stringify({ appPassword, passphrase, backup }) });
 }
 
 export type { StorageInfo, SyncSummary };

@@ -1,9 +1,9 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { configDir } from '../crypto/keySource';
+import { configDir, loadMasterKey } from '../crypto/keySource';
 import { listLocalDir, mkdirLocal } from '../fs/browse';
 import { findFolder, findOrCreateFolderPath } from '../fs/folders';
 import { nodeName } from '../fs/files';
@@ -17,6 +17,8 @@ import { SyncDB, type Pair } from '../state/syncDb';
 import { authService } from './auth';
 import { appendSyncLog, querySyncLog, syncLogPath } from './syncLog';
 import { isAppAuthEnabled, isValidSession, issueSessionToken, loadAppAuth, setAppPassword, verifyAppPassword } from './appAuth';
+import { decryptBackup, describePassphrasePolicy, encryptBackup, isStrongPassphrase, type BackupPayload } from '../crypto/backup';
+import { appendAuditEvent, computeAuditState, fingerprintFromRequest, fingerprintIdentity } from './backupAudit';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -43,6 +45,17 @@ function pairIdFor(localDir: string, driveFolderName: string): string {
 
 function syncDbPath(): string {
     return process.env.PDN_STATE_DB ?? path.join(configDir(), 'sync.db');
+}
+
+function backupFilePath(): string {
+    return path.join(configDir(), 'backup.pdnbak');
+}
+
+function writeFileAtomic(filePath: string, data: string | Buffer, mode = 0o600): void {
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    const tmp = `${filePath}.tmp`;
+    writeFileSync(tmp, data, { mode });
+    renameSync(tmp, filePath);
 }
 
 // ---- SSE broadcast: one sync at a time, many browser listeners ----
@@ -220,6 +233,77 @@ app.post('/api/app/password', (req, res) => {
     }
     setSessionCookie(res, issueSessionToken(), req);
     res.json({ ok: true, enabled: true });
+});
+
+// Restore is reachable while the app is locked / not yet Proton-logged-in, so it
+// sits BEFORE the gate and self-validates from the appPassword + passphrase in the body.
+app.post('/api/restore', async (req, res) => {
+    if (!isAppAuthEnabled()) {
+        res.status(400).json({ error: 'Set an app password before restoring' });
+        return;
+    }
+    if (authService.isAuthenticated()) {
+        res.status(409).json({ error: 'Sign out of Proton before restoring' });
+        return;
+    }
+    const { appPassword, passphrase, backup } = (req.body ?? {}) as { appPassword?: string; passphrase?: string; backup?: string };
+    if (!appPassword || !passphrase) {
+        res.status(400).json({ error: 'appPassword and passphrase are required' });
+        return;
+    }
+    if (!verifyAppPassword(appPassword)) {
+        res.status(401).json({ error: 'Incorrect app password' });
+        return;
+    }
+    let container: Buffer;
+    if (backup) {
+        try {
+            container = Buffer.from(backup, 'base64');
+        } catch {
+            res.status(400).json({ error: 'Invalid backup data' });
+            return;
+        }
+    } else {
+        const p = backupFilePath();
+        if (!existsSync(p)) {
+            res.status(404).json({ error: 'No backup file on this server — upload one instead' });
+            return;
+        }
+        container = readFileSync(p);
+    }
+    let payload: BackupPayload;
+    try {
+        payload = decryptBackup(container, appPassword, passphrase);
+    } catch (err) {
+        res.status(401).json({ error: (err as Error).message });
+        return;
+    }
+    if (syncing) {
+        res.status(409).json({ error: 'A sync is in progress — retry shortly' });
+        return;
+    }
+    try {
+        if (process.env.PDN_ENCRYPTION_KEY) {
+            logger.warn('Restore wrote the backed-up master key to the keyfile, but PDN_ENCRYPTION_KEY is also set and will take precedence — ensure it matches the backed-up key.');
+        }
+        writeFileAtomic(path.join(configDir(), 'encryption.key'), payload.masterKey);
+        const blobPath = path.join(configDir(), 'session.blob');
+        if (payload.hasSession && payload.sessionBlob) {
+            writeFileAtomic(blobPath, payload.sessionBlob);
+        } else {
+            rmSync(blobPath, { force: true });
+        }
+        writeFileAtomic(syncDbPath(), Buffer.from(payload.db, 'base64'));
+        let resumed = false;
+        if (payload.hasSession) {
+            resumed = await authService.resume();
+        }
+        logger.info(`Restore complete (session ${resumed ? 'resumed' : 'not resumed'})`);
+        res.json({ ok: true, resumed });
+    } catch (err) {
+        logger.error('Restore failed', err);
+        res.status(500).json({ error: (err as Error).message });
+    }
 });
 
 // Everything under /api registered after this point requires the app password
@@ -549,6 +633,117 @@ app.get('/api/logs/download', requireAuth, (_req, res) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="sync.log"');
     createReadStream(p).pipe(res);
+});
+
+// ---- encrypted backup config (create / download / status / acknowledge) ----
+
+app.get('/api/backup/status', (_req, res) => {
+    res.json(computeAuditState());
+});
+
+app.post('/api/backup/create', requireAuth, (req, res) => {
+    const { appPassword, passphrase, overwrite } = (req.body ?? {}) as { appPassword?: string; passphrase?: string; overwrite?: boolean };
+    if (!appPassword) {
+        res.status(400).json({ error: 'Enter your current app password' });
+        return;
+    }
+    if (!verifyAppPassword(appPassword)) {
+        res.status(401).json({ error: 'Incorrect app password' });
+        return;
+    }
+    if (!passphrase || !isStrongPassphrase(passphrase)) {
+        res.status(400).json({ error: describePassphrasePolicy() });
+        return;
+    }
+    const bp = backupFilePath();
+    if (existsSync(bp) && !overwrite) {
+        res.status(409).json({ error: 'A backup already exists', exists: true });
+        return;
+    }
+    if (syncing) {
+        res.status(409).json({ error: 'A sync is in progress — wait for it to finish' });
+        return;
+    }
+    const dbPath = syncDbPath();
+    const dbBytes = existsSync(dbPath) ? readFileSync(dbPath) : Buffer.alloc(0);
+    const blobPath = path.join(configDir(), 'session.blob');
+    const hasSession = existsSync(blobPath);
+    const sessionBlob = hasSession ? readFileSync(blobPath, 'utf8') : null;
+    const payload: BackupPayload = {
+        version: 1,
+        createdAt: new Date().toISOString(),
+        hasSession,
+        db: dbBytes.toString('base64'),
+        sessionBlob,
+        masterKey: loadMasterKey().toString('hex'),
+    };
+    const container = encryptBackup(payload, appPassword, passphrase);
+    writeFileAtomic(bp, container);
+    const sha = createHash('sha256').update(container).digest('hex');
+    const fp = fingerprintFromRequest(req);
+    appendAuditEvent({
+        event: 'created',
+        ts: new Date().toISOString(),
+        ip: fp.ip,
+        ua: req.headers['user-agent'] ?? '',
+        os: fp.os,
+        browser: fp.browser,
+        browserVersion: fp.browserVersion,
+        deviceId: fp.deviceId,
+        backupSha256: sha,
+        backupSize: container.length,
+    });
+    logger.info(`Backup created (${container.length} bytes, sha256 ${sha})`);
+    res.json({ ok: true, createdAt: payload.createdAt, size: container.length, sha256: sha, hasSession });
+});
+
+app.get('/api/backup/download', (req, res) => {
+    const bp = backupFilePath();
+    if (!existsSync(bp)) {
+        res.status(404).json({ error: 'No backup file yet' });
+        return;
+    }
+    const state = computeAuditState();
+    const fp = fingerprintFromRequest(req);
+    const mismatch = state.creator ? fingerprintIdentity(fp) !== fingerprintIdentity(state.creator) : false;
+    appendAuditEvent({
+        event: 'downloaded',
+        ts: new Date().toISOString(),
+        ip: fp.ip,
+        ua: req.headers['user-agent'] ?? '',
+        os: fp.os,
+        browser: fp.browser,
+        browserVersion: fp.browserVersion,
+        deviceId: fp.deviceId,
+        mismatch,
+    });
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment; filename="proton-drive-nas-sync-backup.pdnbak"');
+    createReadStream(bp).pipe(res);
+});
+
+app.post('/api/backup/acknowledge', (req, res) => {
+    const state = computeAuditState();
+    if (!state.creator) {
+        res.status(404).json({ error: 'No backup exists' });
+        return;
+    }
+    const fp = fingerprintFromRequest(req);
+    if (fingerprintIdentity(fp) !== fingerprintIdentity(state.creator)) {
+        res.status(403).json({ error: 'Only the client that created the backup can clear this warning' });
+        return;
+    }
+    appendAuditEvent({
+        event: 'warning-acknowledged',
+        ts: new Date().toISOString(),
+        ip: fp.ip,
+        ua: req.headers['user-agent'] ?? '',
+        os: fp.os,
+        browser: fp.browser,
+        browserVersion: fp.browserVersion,
+        deviceId: fp.deviceId,
+    });
+    res.json({ ok: true });
 });
 
 app.get('/api/events', (req, res) => {

@@ -5,6 +5,9 @@ interface Props {
     onLogin: (uid?: string) => void;
     theme: 'dark' | 'light';
     onToggleTheme: () => void;
+    appPasswordEnabled: boolean;
+    onSetAppPassword: () => void;
+    onRestore: () => void;
 }
 
 interface HvChallenge {
@@ -45,7 +48,7 @@ const CAPTURE_SNIPPET = `(function () {
   } catch (e) {}
 })();`;
 
-export function LoginView({ onLogin, theme, onToggleTheme }: Props) {
+export function LoginView({ onLogin, theme, onToggleTheme, appPasswordEnabled, onSetAppPassword, onRestore }: Props) {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [needsTwoFactor, setNeedsTwoFactor] = useState(false);
@@ -179,6 +182,18 @@ export function LoginView({ onLogin, theme, onToggleTheme }: Props) {
                         {busy ? 'Signing in…' : hv ? 'Continue' : 'Sign in'}
                     </button>
                 </form>
+
+                <div className="auth-secondary">
+                    {appPasswordEnabled ? (
+                        <button type="button" className="btn btn-ghost" onClick={onRestore}>
+                            Restore config from backup
+                        </button>
+                    ) : (
+                        <button type="button" className="btn btn-ghost" onClick={onSetAppPassword}>
+                            Set app password
+                        </button>
+                    )}
+                </div>
 
                 <p className="disclaimer">
                     Third-party application — not affiliated with, endorsed by, or supported by Proton AG. Your credentials are
