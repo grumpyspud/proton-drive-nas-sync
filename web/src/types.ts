@@ -3,6 +3,10 @@ export interface Pair {
     localDir: string;
     driveFolderName: string;
     driveFolderUid: string;
+    realTime: boolean;
+    autoSync: boolean;
+    intervalSeconds: number;
+    lastSyncAt: number | null;
 }
 
 export interface SyncSummary {

@@ -1,9 +1,25 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { addPair, getStorage, listPairs, logout, removePair, startSync } from '../api';
+import { addPair, getStorage, listPairs, logout, removePair, startSync, updatePair, type PairSettings } from '../api';
 import type { Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState } from '../types';
 import { formatBytes } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { FolderBrowser } from './FolderBrowser';
+
+const MAX_LOG = 200;
+
+const AUTO_SYNC_INTERVALS: Array<{ label: string; value: number }> = [
+    { label: '15 min', value: 900 },
+    { label: '30 min', value: 1800 },
+    { label: '1 hour', value: 3600 },
+    { label: '6 hours', value: 21600 },
+    { label: '12 hours', value: 43200 },
+    { label: '24 hours', value: 86400 },
+];
+
+function intervalLabel(seconds: number): string {
+    const match = AUTO_SYNC_INTERVALS.find((i) => i.value === seconds);
+    return match ? match.label : seconds > 0 ? `every ${Math.round(seconds / 60)} min` : '—';
+}
 
 interface Props {
     uid?: string;
@@ -17,6 +33,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
     const [syncing, setSyncing] = useState(false);
     const [active, setActive] = useState<Map<string, TransferState>>(new Map());
     const [items, setItems] = useState<Array<{ action: string; relPath: string }>>([]);
+    const [totalItems, setTotalItems] = useState(0);
     const [summary, setSummary] = useState<SyncSummary | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [storage, setStorage] = useState<StorageInfo | null>(null);
@@ -57,6 +74,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                     setError(null);
                     setSummary(null);
                     setItems([]);
+                    setTotalItems(0);
                     setActive(new Map());
                     break;
                 case 'transfer':
@@ -74,7 +92,19 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                     });
                     break;
                 case 'item':
-                    setItems((prev) => [...prev, { action: ev.action, relPath: ev.relPath }]);
+                    setTotalItems((t) => t + 1);
+                    setItems((prev) => {
+                        const next = [...prev, { action: ev.action, relPath: ev.relPath }];
+                        return next.length > MAX_LOG ? next.slice(-MAX_LOG) : next;
+                    });
+                    // A completed transfer should leave the progress area; it is
+                    // now just a log line. Only files still transferring keep a bar.
+                    setActive((prev) => {
+                        if (!prev.has(ev.relPath)) return prev;
+                        const next = new Map(prev);
+                        next.delete(ev.relPath);
+                        return next;
+                    });
                     break;
                 case 'sync-complete':
                     setSyncing(false);
@@ -90,12 +120,12 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
             }
         };
         return () => es.close();
-    }, []);
+    }, [loadStorage]);
 
-    async function onAdd(localDir: string, driveFolderName: string) {
+    async function onAdd(localDir: string, driveFolderName: string, settings: PairSettings) {
         setError(null);
         try {
-            await addPair(localDir, driveFolderName);
+            await addPair(localDir, driveFolderName, settings);
             await reload();
         } catch (err) {
             setError((err as Error).message);
@@ -111,6 +141,16 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
         setError(null);
         try {
             await startSync(id);
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function onUpdatePair(id: string, settings: PairSettings) {
+        setError(null);
+        try {
+            await updatePair(id, settings);
+            await reload();
         } catch (err) {
             setError((err as Error).message);
         }
@@ -178,7 +218,11 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
 
                         {items.length > 0 && (
                             <details className="activity-log">
-                                <summary>Activity log ({items.length})</summary>
+                                <summary>
+                                    {totalItems > items.length
+                                        ? `Activity log (last ${items.length} of ${totalItems})`
+                                        : `Activity log (${items.length})`}
+                                </summary>
                                 <ul>
                                     {items
                                         .slice(-60)
@@ -202,17 +246,46 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                         <ul className="pair-list">
                             {pairs.map((p) => (
                                 <li key={p.id} className="pair">
-                                    <div className="pair-info">
-                                        <div className="pair-name">{p.driveFolderName}</div>
-                                        <div className="pair-dir">{p.localDir}</div>
+                                    <div className="pair-main">
+                                        <div className="pair-info">
+                                            <div className="pair-name">
+                                                {p.driveFolderName}
+                                                {p.realTime && (
+                                                    <span className="badge badge-live">
+                                                        <span className="pulse" /> live
+                                                    </span>
+                                                )}
+                                                {p.autoSync && p.intervalSeconds > 0 && (
+                                                    <span className="badge">⏱ {intervalLabel(p.intervalSeconds)}</span>
+                                                )}
+                                            </div>
+                                            <div className="pair-dir">{p.localDir}</div>
+                                        </div>
+                                        <div className="pair-actions">
+                                            <button className="btn btn-primary btn-sm" onClick={() => onSync(p.id)} disabled={syncing}>
+                                                Sync
+                                            </button>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => onRemove(p.id)}>
+                                                Remove
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div className="pair-actions">
-                                        <button className="btn btn-primary btn-sm" onClick={() => onSync(p.id)} disabled={syncing}>
-                                            Sync
-                                        </button>
-                                        <button className="btn btn-ghost btn-sm" onClick={() => onRemove(p.id)}>
-                                            Remove
-                                        </button>
+                                    <div className="pair-settings">
+                                        <Toggle label="Real-time" checked={p.realTime} onChange={(v) => onUpdatePair(p.id, { realTime: v })} />
+                                        <Toggle
+                                            label="Auto-sync"
+                                            checked={p.autoSync}
+                                            onChange={(v) => onUpdatePair(p.id, { autoSync: v, intervalSeconds: v ? p.intervalSeconds || 3600 : p.intervalSeconds })}
+                                        />
+                                        {p.autoSync && (
+                                            <select className="select" value={p.intervalSeconds} onChange={(e) => onUpdatePair(p.id, { intervalSeconds: Number(e.target.value) })}>
+                                                {AUTO_SYNC_INTERVALS.map((i) => (
+                                                    <option key={i.value} value={i.value}>
+                                                        {i.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        )}
                                     </div>
                                 </li>
                             ))}
@@ -260,9 +333,24 @@ function StorageCard({ storage }: { storage: StorageInfo }) {
     );
 }
 
-function AddPairForm({ onAdd }: { onAdd: (localDir: string, driveFolderName: string) => Promise<void> }) {
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+    return (
+        <label className="toggle">
+            <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+            <span className="toggle-track">
+                <span className="toggle-thumb" />
+            </span>
+            <span className="toggle-label">{label}</span>
+        </label>
+    );
+}
+
+function AddPairForm({ onAdd }: { onAdd: (localDir: string, driveFolderName: string, settings: PairSettings) => Promise<void> }) {
     const [localDir, setLocalDir] = useState('');
     const [folder, setFolder] = useState('');
+    const [realTime, setRealTime] = useState(false);
+    const [autoSync, setAutoSync] = useState(false);
+    const [intervalSeconds, setIntervalSeconds] = useState(3600);
     const [busy, setBusy] = useState(false);
 
     async function submit(e: FormEvent) {
@@ -270,9 +358,12 @@ function AddPairForm({ onAdd }: { onAdd: (localDir: string, driveFolderName: str
         if (!localDir || !folder) return;
         setBusy(true);
         try {
-            await onAdd(localDir, folder);
+            await onAdd(localDir, folder, { realTime, autoSync, intervalSeconds: autoSync ? intervalSeconds : 0 });
             setLocalDir('');
             setFolder('');
+            setRealTime(false);
+            setAutoSync(false);
+            setIntervalSeconds(3600);
         } finally {
             setBusy(false);
         }
@@ -287,6 +378,22 @@ function AddPairForm({ onAdd }: { onAdd: (localDir: string, driveFolderName: str
             <div className="field">
                 <span>Proton Drive folder</span>
                 <FolderBrowser mode="drive" value={folder} onChange={setFolder} placeholder="My Files" />
+            </div>
+            <div className="field">
+                <span>Sync schedule</span>
+                <div className="toggle-row">
+                    <Toggle label="Real-time (10s)" checked={realTime} onChange={setRealTime} />
+                    <Toggle label="Auto-sync" checked={autoSync} onChange={setAutoSync} />
+                </div>
+                {autoSync && (
+                    <select className="select" value={intervalSeconds} onChange={(e) => setIntervalSeconds(Number(e.target.value))}>
+                        {AUTO_SYNC_INTERVALS.map((i) => (
+                            <option key={i.value} value={i.value}>
+                                {i.label}
+                            </option>
+                        ))}
+                    </select>
+                )}
             </div>
             <button className="btn btn-primary" type="submit" disabled={busy || !localDir || !folder}>
                 Add pair

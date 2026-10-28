@@ -44,8 +44,18 @@ export function listPairs(): Promise<{ pairs: Pair[] }> {
     return request('/api/pairs');
 }
 
-export function addPair(localDir: string, driveFolderName: string): Promise<{ pair: Pair }> {
-    return request('/api/pairs', { method: 'POST', body: JSON.stringify({ localDir, driveFolderName }) });
+export interface PairSettings {
+    realTime?: boolean;
+    autoSync?: boolean;
+    intervalSeconds?: number;
+}
+
+export function addPair(localDir: string, driveFolderName: string, settings: PairSettings = {}): Promise<{ pair: Pair }> {
+    return request('/api/pairs', { method: 'POST', body: JSON.stringify({ localDir, driveFolderName, ...settings }) });
+}
+
+export function updatePair(id: string, settings: PairSettings): Promise<{ pair: Pair }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(settings) });
 }
 
 export function removePair(id: string): Promise<{ ok: boolean }> {

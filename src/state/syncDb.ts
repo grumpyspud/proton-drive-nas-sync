@@ -18,6 +18,14 @@ export interface Pair {
     localDir: string;
     driveFolderName: string;
     driveFolderUid: string;
+    /** Watch continuously (fixed 10s poll) while the server runs. */
+    realTime: boolean;
+    /** Sync on a schedule (intervalSeconds). */
+    autoSync: boolean;
+    /** Auto-sync frequency in seconds (0 = unset). */
+    intervalSeconds: number;
+    /** Epoch ms of the last completed sync, or null if never. */
+    lastSyncAt: number | null;
 }
 
 interface NodeRow {
@@ -29,6 +37,17 @@ interface NodeRow {
     local_sha1: string | null;
     local_size: number | null;
     local_mtime: number | null;
+}
+
+interface PairRow {
+    id: string;
+    local_dir: string;
+    drive_folder_name: string;
+    drive_folder_uid: string;
+    real_time: number;
+    auto_sync: number;
+    interval_seconds: number;
+    last_sync_at: number | null;
 }
 
 function toNode(row: NodeRow): SyncNode {
@@ -44,10 +63,24 @@ function toNode(row: NodeRow): SyncNode {
     };
 }
 
+function toPair(row: PairRow): Pair {
+    return {
+        id: row.id,
+        localDir: row.local_dir,
+        driveFolderName: row.drive_folder_name,
+        driveFolderUid: row.drive_folder_uid,
+        realTime: !!row.real_time,
+        autoSync: !!row.auto_sync,
+        intervalSeconds: row.interval_seconds ?? 0,
+        lastSyncAt: row.last_sync_at ?? null,
+    };
+}
+
 /**
  * Sync state store for the bidirectional engine. Unlike the M3 backup DB, this
  * tracks BOTH sides of a folder pair (drive fingerprint + local fingerprint) so
- * the engine can do a three-way reconcile (local vs drive vs last-synced).
+ * the engine can do a three-way reconcile (local vs drive vs last-synced). It
+ * also stores per-pair scheduling (real-time / auto-sync) for the scheduler.
  */
 export class SyncDB {
     private readonly db: DatabaseSync;
@@ -60,7 +93,11 @@ export class SyncDB {
                 id TEXT PRIMARY KEY,
                 local_dir TEXT NOT NULL,
                 drive_folder_name TEXT NOT NULL,
-                drive_folder_uid TEXT NOT NULL
+                drive_folder_uid TEXT NOT NULL,
+                real_time INTEGER NOT NULL DEFAULT 0,
+                auto_sync INTEGER NOT NULL DEFAULT 0,
+                interval_seconds INTEGER NOT NULL DEFAULT 0,
+                last_sync_at INTEGER
             );
             CREATE TABLE IF NOT EXISTS nodes (
                 pair_id TEXT NOT NULL,
@@ -75,37 +112,63 @@ export class SyncDB {
                 PRIMARY KEY (pair_id, rel_path)
             );
         `);
+        this.migrate();
+    }
+
+    /** Add scheduling columns to pre-existing pair tables (idempotent). */
+    private migrate(): void {
+        const cols = this.db.prepare('PRAGMA table_info(pairs)').all() as { name: string }[];
+        const names = new Set(cols.map((c) => c.name));
+        const add = (name: string, def: string) => {
+            if (!names.has(name)) this.db.exec(`ALTER TABLE pairs ADD COLUMN ${name} ${def}`);
+        };
+        add('real_time', 'INTEGER NOT NULL DEFAULT 0');
+        add('auto_sync', 'INTEGER NOT NULL DEFAULT 0');
+        add('interval_seconds', 'INTEGER NOT NULL DEFAULT 0');
+        add('last_sync_at', 'INTEGER');
     }
 
     upsertPair(pair: Pair): void {
         this.db
             .prepare(
                 `
-                INSERT INTO pairs (id, local_dir, drive_folder_name, drive_folder_uid) VALUES (?, ?, ?, ?)
+                INSERT INTO pairs (id, local_dir, drive_folder_name, drive_folder_uid, real_time, auto_sync, interval_seconds, last_sync_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     local_dir = excluded.local_dir,
                     drive_folder_name = excluded.drive_folder_name,
-                    drive_folder_uid = excluded.drive_folder_uid
+                    drive_folder_uid = excluded.drive_folder_uid,
+                    real_time = excluded.real_time,
+                    auto_sync = excluded.auto_sync,
+                    interval_seconds = excluded.interval_seconds,
+                    last_sync_at = excluded.last_sync_at
                 `,
             )
-            .run(pair.id, pair.localDir, pair.driveFolderName, pair.driveFolderUid);
+            .run(
+                pair.id,
+                pair.localDir,
+                pair.driveFolderName,
+                pair.driveFolderUid,
+                pair.realTime ? 1 : 0,
+                pair.autoSync ? 1 : 0,
+                pair.intervalSeconds,
+                pair.lastSyncAt,
+            );
     }
 
     getPair(id: string): Pair | undefined {
-        const row = this.db
-            .prepare('SELECT * FROM pairs WHERE id = ?')
-            .get(id) as { id: string; local_dir: string; drive_folder_name: string; drive_folder_uid: string } | undefined;
-        return row ? { id: row.id, localDir: row.local_dir, driveFolderName: row.drive_folder_name, driveFolderUid: row.drive_folder_uid } : undefined;
+        const row = this.db.prepare('SELECT * FROM pairs WHERE id = ?').get(id) as unknown as PairRow | undefined;
+        return row ? toPair(row) : undefined;
     }
 
     listPairs(): Pair[] {
-        const rows = this.db.prepare('SELECT * FROM pairs ORDER BY id').all() as unknown as {
-            id: string;
-            local_dir: string;
-            drive_folder_name: string;
-            drive_folder_uid: string;
-        }[];
-        return rows.map((r) => ({ id: r.id, localDir: r.local_dir, driveFolderName: r.drive_folder_name, driveFolderUid: r.drive_folder_uid }));
+        const rows = this.db.prepare('SELECT * FROM pairs ORDER BY id').all() as unknown as PairRow[];
+        return rows.map(toPair);
+    }
+
+    /** Stamp the last completed sync time (drives the auto-sync scheduler). */
+    markSynced(id: string): void {
+        this.db.prepare('UPDATE pairs SET last_sync_at = ? WHERE id = ?').run(Date.now(), id);
     }
 
     removePair(id: string): void {

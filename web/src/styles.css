@@ -709,3 +709,113 @@ input:focus {
 .browser-error {
     color: var(--danger);
 }
+
+/* ---------- Select ---------- */
+select.select {
+    width: auto;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--ink);
+    background: var(--field-bg);
+}
+
+select.select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+/* ---------- Toggle switch ---------- */
+.toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+}
+
+.toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-track {
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--border);
+    transition: background 0.15s;
+    flex-shrink: 0;
+    position: relative;
+}
+
+.toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--surface);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: transform 0.15s;
+}
+
+.toggle input:checked + .toggle-track {
+    background: var(--primary);
+}
+
+.toggle input:checked + .toggle-track .toggle-thumb {
+    transform: translateX(16px);
+}
+
+.toggle-label {
+    font-size: 13px;
+    color: var(--ink-600);
+}
+
+/* ---------- Pair settings ---------- */
+.pair {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.pair-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.pair-settings {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--bg);
+}
+
+.pair-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pair-name .badge {
+    font-size: 11px;
+}
+
+.toggle-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+}

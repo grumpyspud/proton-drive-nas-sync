@@ -11,7 +11,7 @@ import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce } from '../engine/sync';
 import type { ProgressHandler, SyncProgressEvent } from '../engine/progress';
 import { logger } from '../logger';
-import { SyncDB } from '../state/syncDb';
+import { SyncDB, type Pair } from '../state/syncDb';
 import { authService } from './auth';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,6 +23,14 @@ interface StorageUser {
     Email?: string;
     DisplayName?: string | null;
     Name?: string | null;
+}
+
+interface PairBody {
+    localDir?: string;
+    driveFolderName?: string;
+    realTime?: boolean;
+    autoSync?: boolean;
+    intervalSeconds?: number;
 }
 
 function pairIdFor(localDir: string, driveFolderName: string): string {
@@ -66,6 +74,7 @@ async function runSync(pairId: string): Promise<boolean> {
             db,
             onProgress,
         });
+        db.markSynced(pairId);
         broadcast({ type: 'sync-complete', summary });
         return true;
     } catch (error) {
@@ -191,8 +200,7 @@ app.get('/api/pairs', requireAuth, (_req, res) => {
 });
 
 app.post('/api/pairs', requireAuth, async (req, res) => {
-    const body = req.body ?? {};
-    const { localDir, driveFolderName } = body as Record<string, string | undefined>;
+    const { localDir, driveFolderName, realTime, autoSync, intervalSeconds } = (req.body ?? {}) as PairBody;
     if (!localDir || !driveFolderName) {
         res.status(400).json({ error: 'localDir and driveFolderName are required' });
         return;
@@ -202,9 +210,41 @@ app.post('/api/pairs', requireAuth, async (req, res) => {
         const session = authService.getSession();
         const root = await session.sdk.getMyFilesRootFolder();
         const driveFolderUid = await findOrCreateFolderPath(session.sdk, root.uid, driveFolderName);
-        const pair = { id: pairIdFor(localDir, driveFolderName), localDir, driveFolderName, driveFolderUid };
+        const pair: Pair = {
+            id: pairIdFor(localDir, driveFolderName),
+            localDir,
+            driveFolderName,
+            driveFolderUid,
+            realTime: !!realTime,
+            autoSync: !!autoSync,
+            intervalSeconds: typeof intervalSeconds === 'number' ? intervalSeconds : 0,
+            lastSyncAt: null,
+        };
         db.upsertPair(pair);
         res.json({ pair });
+    } finally {
+        db.close();
+    }
+});
+
+app.patch('/api/pairs/:id', requireAuth, (req, res) => {
+    const db = new SyncDB(syncDbPath());
+    try {
+        const pair = db.getPair(req.params.id as string);
+        if (!pair) {
+            res.status(404).json({ error: 'Pair not found' });
+            return;
+        }
+        const body = (req.body ?? {}) as PairBody;
+        const updated: Pair = {
+            ...pair,
+            realTime: typeof body.realTime === 'boolean' ? body.realTime : pair.realTime,
+            autoSync: typeof body.autoSync === 'boolean' ? body.autoSync : pair.autoSync,
+            intervalSeconds: typeof body.intervalSeconds === 'number' ? body.intervalSeconds : pair.intervalSeconds,
+        };
+        if (updated.autoSync && updated.intervalSeconds <= 0) updated.intervalSeconds = 3600;
+        db.upsertPair(updated);
+        res.json({ pair: updated });
     } finally {
         db.close();
     }
@@ -257,6 +297,39 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     logger.error('Unhandled error', err);
     res.status(500).json({ error: (err as Error).message ?? 'Internal error' });
 });
+
+// ---- background scheduler: real-time (fixed 10s poll) + auto-sync (interval) ----
+const REAL_TIME_INTERVAL_MS = 10_000;
+
+function duePairs(db: SyncDB): Pair[] {
+    const now = Date.now();
+    return db.listPairs().filter((p) => {
+        if (p.realTime) return true;
+        if (p.autoSync && p.intervalSeconds > 0) return now - (p.lastSyncAt ?? 0) >= p.intervalSeconds * 1000;
+        return false;
+    });
+}
+
+async function schedulerTick(): Promise<void> {
+    if (syncing) return;
+    const ids: string[] = [];
+    {
+        const db = new SyncDB(syncDbPath());
+        try {
+            for (const p of duePairs(db)) ids.push(p.id);
+        } finally {
+            db.close();
+        }
+    }
+    for (const id of ids) {
+        const started = await runSync(id);
+        if (!started) break;
+    }
+}
+
+setInterval(() => {
+    void schedulerTick();
+}, REAL_TIME_INTERVAL_MS);
 
 const PORT = parseInt(process.env.PDN_PORT ?? '8787', 10);
 app.listen(PORT, () => logger.info(`proton-drive-nas-sync server listening on http://0.0.0.0:${PORT}`));
