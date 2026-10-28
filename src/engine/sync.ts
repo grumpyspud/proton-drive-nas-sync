@@ -7,7 +7,7 @@ import type { SyncDB } from '../state/syncDb';
 import { SpeedMeter, type ProgressHandler } from './progress';
 import { assertSourceAvailable, checkDeletionTripwire } from './safety';
 import { drain } from './util';
-import { walkDriveTree, walkLocalTree } from './walk';
+import { driveSize, walkDriveTree, walkLocalTree } from './walk';
 import type { DriveEntry, LocalEntry } from './walk';
 
 export interface SyncOptions {
@@ -23,6 +23,8 @@ export interface SyncOptions {
     onProgress?: ProgressHandler;
     /** When truthy, the sync halts at the next safe boundary (between files). */
     shouldAbort?: () => boolean;
+    /** Per-file bars are only emitted for files this size or larger (bytes). */
+    progressMinBytes?: number;
 }
 
 export interface SyncResult {
@@ -41,6 +43,11 @@ export class SyncAbortedError extends Error {
         this.name = 'SyncAbortedError';
     }
 }
+
+/** Files smaller than this get no individual progress bar (avoids UI flicker on
+ *  floods of small files); the job-level bar still tracks them. Tunable at the
+ *  server via PDN_PROGRESS_MIN_BYTES. */
+export const DEFAULT_PROGRESS_MIN_BYTES = 5 * 1024 * 1024;
 
 interface DriveDeletion {
     relPath: string;
@@ -66,11 +73,18 @@ function driveSha1(fingerprint: string | null | undefined): string {
  * caller emits `sync-complete` (with the returned summary) or `sync-error`.
  */
 export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
-    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress, shouldAbort } = options;
+    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress, shouldAbort, progressMinBytes = DEFAULT_PROGRESS_MIN_BYTES } = options;
     const result: SyncResult = { uploaded: 0, downloaded: 0, localRecycled: 0, driveTrashed: 0, conflicts: 0, skipped: 0 };
     const checkAbort = (): void => {
         if (shouldAbort?.()) throw new SyncAbortedError();
     };
+
+    // Job-level progress tracking (overall % + speed across all files).
+    let completedBytes = 0;
+    let completedFiles = 0;
+    let totalBytes = 0;
+    let totalFiles = 0;
+    const overallMeter = new SpeedMeter();
 
     onProgress?.({ type: 'sync-start', pairId, localDir, driveFolderName: options.driveFolderName ?? '' });
 
@@ -91,18 +105,38 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     const localDeletions: LocalDeletion[] = [];
     const deletedFolderPrefixes = new Set<string>();
 
-    /** Builds a byte-level reporter that emits `transfer` events with speed. */
+    /** Builds a byte-level reporter. Emits a per-file `transfer` event (only for
+     *  files at/above progressMinBytes) plus a job-level `overall` event. */
     function transferReporter(relPath: string, direction: 'upload' | 'download'): TransferProgress {
         const meter = new SpeedMeter();
         return (bytes, total) => {
             const percent = total > 0 ? Math.min(100, (bytes / total) * 100) : 100;
-            onProgress?.({ type: 'transfer', relPath, direction, bytes, total, percent, speedBps: meter.sample(bytes) });
+            if (total >= progressMinBytes) {
+                onProgress?.({ type: 'transfer', relPath, direction, bytes, total, percent, speedBps: meter.sample(bytes) });
+            }
+            const jobBytes = completedBytes + bytes;
+            onProgress?.({
+                type: 'overall',
+                transferredBytes: jobBytes,
+                totalBytes,
+                percent: totalBytes > 0 ? Math.min(100, (jobBytes / totalBytes) * 100) : 0,
+                speedBps: overallMeter.sample(jobBytes),
+                filesDone: completedFiles,
+                totalFiles,
+            });
         };
     }
 
     async function downloadTo(uid: string, relPath: string, localPath: string): Promise<void> {
         await mkdir(path.dirname(localPath), { recursive: true });
-        await downloadFile(sdk, uid, localPath, transferReporter(relPath, 'download'));
+        let size = 0;
+        const rep = transferReporter(relPath, 'download');
+        await downloadFile(sdk, uid, localPath, (bytes, total) => {
+            size = total;
+            rep(bytes, total);
+        });
+        completedBytes += size;
+        completedFiles++;
     }
 
     // Resolve a conflict: local wins, but the Drive version is preserved
@@ -112,7 +146,10 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         const conflictPath = path.join(localDir, `${relPath}.conflict-${ts}`);
         await mkdir(path.dirname(conflictPath), { recursive: true });
         await downloadFile(sdk, D.uid, conflictPath, transferReporter(relPath, 'download'));
+        completedBytes += driveSize(D.node);
         const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'));
+        completedBytes += L.size;
+        completedFiles++;
         db.upsertNode({
             pairId,
             relPath,
@@ -185,6 +222,62 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     for (const e of drive) if (e.kind === 'file') fileRelPaths.add(e.relPath);
     for (const n of stored) if (n.kind === 'file') fileRelPaths.add(n.relPath);
 
+    // ---- Plan pass: estimate the job's total transfer size for the overall
+    //      progress bar. Cheap signals only (no hashing): exact for new files,
+    //      approximate only when a "changed" decision would need the sha1. ----
+    for (const relPath of fileRelPaths) {
+        if (isUnderDeletedFolder(relPath)) continue;
+        const L = localByRel.get(relPath);
+        const D = driveByRel.get(relPath);
+        const S = storedByRel.get(relPath);
+        const inLocal = !!L;
+        const inDrive = !!D;
+        const inDb = !!S;
+        const dSize = driveSize(D?.node);
+        let bytes = 0;
+        let transfers = false;
+
+        if (inLocal && !inDrive && !inDb) {
+            bytes = L!.size;
+            transfers = true;
+        } else if (!inLocal && inDrive && !inDb) {
+            bytes = dSize;
+            transfers = true;
+        } else if (inLocal && inDrive && !inDb) {
+            bytes = L!.size + dSize; // assume conflict
+            transfers = true;
+        } else if (inLocal && inDrive) {
+            const localChanged = S!.localSha1 == null || S!.localSize !== L!.size || S!.localMtime !== L!.mtimeMs;
+            const driveChanged = S!.driveFingerprint == null || D!.fingerprint !== S!.driveFingerprint;
+            if (localChanged && !driveChanged) {
+                bytes = L!.size;
+                transfers = true;
+            } else if (!localChanged && driveChanged) {
+                bytes = dSize;
+                transfers = true;
+            } else if (localChanged && driveChanged) {
+                bytes = L!.size + dSize;
+                transfers = true;
+            }
+        } else if (inLocal && !inDrive) {
+            const localChanged = S!.localSha1 == null || S!.localSize !== L!.size || S!.localMtime !== L!.mtimeMs;
+            if (localChanged) {
+                bytes = L!.size;
+                transfers = true;
+            }
+        } else if (!inLocal && inDrive) {
+            const driveChanged = S!.driveFingerprint == null || D!.fingerprint !== S!.driveFingerprint;
+            if (driveChanged) {
+                bytes = dSize;
+                transfers = true;
+            }
+        }
+
+        if (transfers) totalFiles++;
+        totalBytes += bytes;
+    }
+    onProgress?.({ type: 'sync-plan', totalBytes, totalFiles });
+
     for (const relPath of fileRelPaths) {
         checkAbort();
         if (isUnderDeletedFolder(relPath)) continue; // covered by the folder deletion
@@ -220,6 +313,8 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         if (inLocal && !inDrive && !inDb) {
             if (!parentUid) throw new Error(`No parent for ${relPath}`);
             const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'));
+            completedBytes += L.size;
+            completedFiles++;
             db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
             driveByRel.set(relPath, { relPath, uid, kind: 'file', fingerprint: `${localSha1}|${L.size}|${L.mtimeMs}`, node: undefined });
             result.uploaded++;
@@ -259,6 +354,8 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
 
             if (localChanged && !driveChanged) {
                 const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'));
+                completedBytes += L.size;
+                completedFiles++;
                 db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                 result.uploaded++;
                 onProgress?.({ type: 'item', action: 'upload', relPath });
@@ -303,6 +400,8 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             if (localChanged) {
                 if (!parentUid) throw new Error(`No parent for ${relPath}`);
                 const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'));
+                completedBytes += L.size;
+                completedFiles++;
                 db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                 result.uploaded++;
                 onProgress?.({ type: 'item', action: 'upload', relPath });

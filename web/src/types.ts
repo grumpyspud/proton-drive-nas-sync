@@ -32,7 +32,9 @@ export type SyncAction =
 
 export type SyncProgressEvent =
     | { type: 'sync-start'; pairId: string; localDir: string; driveFolderName: string }
+    | { type: 'sync-plan'; totalBytes: number; totalFiles: number }
     | { type: 'transfer'; relPath: string; direction: TransferDirection; bytes: number; total: number; percent: number; speedBps: number }
+    | { type: 'overall'; transferredBytes: number; totalBytes: number; percent: number; speedBps: number; filesDone: number; totalFiles: number }
     | { type: 'item'; action: SyncAction; relPath: string }
     | { type: 'sync-complete'; summary: SyncSummary }
     | { type: 'sync-error'; message: string }
@@ -47,6 +49,15 @@ export interface TransferState {
     total: number;
     percent: number;
     speedBps: number;
+}
+
+export interface OverallState {
+    transferredBytes: number;
+    totalBytes: number;
+    percent: number;
+    speedBps: number;
+    filesDone: number;
+    totalFiles: number;
 }
 
 export interface StorageInfo {

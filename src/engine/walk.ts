@@ -34,6 +34,15 @@ export function driveFingerprint(node: NodeEntity): string {
     return `${sha1}|${size}|${mtime}`;
 }
 
+/** Best-effort byte size of a Drive file node (claimed size), or 0 if unknown. */
+export function driveSize(node: NodeEntity | undefined): number {
+    if (!node) return 0;
+    const s = node.activeRevision?.claimedSize;
+    if (typeof s === 'number') return s;
+    if (typeof s === 'string') return Number(s) || 0;
+    return 0;
+}
+
 /**
  * Recursively walks a local directory tree (files + folders). Entries whose
  * name starts with `excludePrefix` (default `.pdn-` — the sync engine's

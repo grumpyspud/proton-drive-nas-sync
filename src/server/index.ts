@@ -51,6 +51,15 @@ function broadcast(event: SyncProgressEvent): void {
     appendSyncLog(event);
 }
 
+// Per-file progress bars are only shown for files >= this size (bytes); 0 disables
+// them entirely (the overall bar still shows). Overridable via PDN_PROGRESS_MIN_BYTES.
+const PROGRESS_MIN_BYTES = (() => {
+    const raw = process.env.PDN_PROGRESS_MIN_BYTES;
+    if (!raw) return undefined;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+})();
+
 let syncing = false;
 let paused = false;
 let stopRequested = false;
@@ -80,6 +89,7 @@ async function runSync(pairId: string): Promise<boolean> {
             db,
             onProgress,
             shouldAbort: () => paused || stopRequested,
+            progressMinBytes: PROGRESS_MIN_BYTES,
         });
         db.markSynced(pairId);
         broadcast({ type: 'sync-complete', summary });

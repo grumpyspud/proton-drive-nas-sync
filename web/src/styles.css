@@ -511,6 +511,9 @@ input:focus {
 .fill-download {
     background: linear-gradient(90deg, #2bd191, #1ea672);
 }
+.fill-overall {
+    background: linear-gradient(90deg, #8b5cf6, #6366f1);
+}
 
 .transfer-foot {
     display: flex;
@@ -525,6 +528,50 @@ input:focus {
     font-variant-numeric: tabular-nums;
     font-weight: 600;
     color: var(--ink-600);
+}
+
+/* ---------- Overall sync bar ---------- */
+.overall {
+    margin-bottom: 16px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+}
+
+.overall-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+
+.overall-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.overall-meta {
+    font-size: 12px;
+    color: var(--ink-400);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.overall .progress-track {
+    height: 12px;
+}
+
+.overall-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--ink-400);
+    margin-top: 6px;
 }
 
 /* ---------- Summary ---------- */

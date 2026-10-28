@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { addPair, clearTrash, deleteTrashItem, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, type PairSettings } from '../api';
-import type { Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
-import { formatBytes } from '../format';
+import type { OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
+import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { FolderBrowser } from './FolderBrowser';
 import { LogsModal } from './LogsModal';
@@ -41,6 +41,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
     const [trashPair, setTrashPair] = useState<Pair | null>(null);
     const [paused, setPaused] = useState(false);
     const [showLogs, setShowLogs] = useState(false);
+    const [overall, setOverall] = useState<OverallState | null>(null);
 
     const reload = useCallback(async () => {
         try {
@@ -89,6 +90,10 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                     setItems([]);
                     setTotalItems(0);
                     setActive(new Map());
+                    setOverall(null);
+                    break;
+                case 'sync-plan':
+                    setOverall({ transferredBytes: 0, totalBytes: ev.totalBytes, percent: 0, speedBps: 0, filesDone: 0, totalFiles: ev.totalFiles });
                     break;
                 case 'transfer':
                     setActive((prev) => {
@@ -102,6 +107,16 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                             speedBps: ev.speedBps,
                         });
                         return next;
+                    });
+                    break;
+                case 'overall':
+                    setOverall({
+                        transferredBytes: ev.transferredBytes,
+                        totalBytes: ev.totalBytes,
+                        percent: ev.percent,
+                        speedBps: ev.speedBps,
+                        filesDone: ev.filesDone,
+                        totalFiles: ev.totalFiles,
                     });
                     break;
                 case 'item':
@@ -123,17 +138,20 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                     setSyncing(false);
                     setSummary(ev.summary);
                     setActive(new Map());
+                    setOverall(null);
                     void loadStorage();
                     break;
                 case 'sync-error':
                     setSyncing(false);
                     setError(ev.message);
                     setActive(new Map());
+                    setOverall(null);
                     break;
                 case 'sync-paused':
                     setPaused(true);
                     setSyncing(false);
                     setActive(new Map());
+                    setOverall(null);
                     break;
                 case 'sync-resumed':
                     setPaused(false);
@@ -141,6 +159,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                 case 'sync-stopped':
                     setSyncing(false);
                     setActive(new Map());
+                    setOverall(null);
                     break;
             }
         };
@@ -254,10 +273,12 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
 
                         {error && <div className="alert">{error}</div>}
 
+                        {overall && (overall.totalFiles > 0 || overall.totalBytes > 0) && <OverallBar {...overall} />}
+
                         {[...active.values()].map((t) => (
                             <ProgressBar key={t.relPath} {...t} />
                         ))}
-                        {syncing && active.size === 0 && <div className="muted">Scanning for changes…</div>}
+                        {syncing && overall == null && active.size === 0 && <div className="muted">Scanning for changes…</div>}
 
                         {summary && !syncing && (
                             <div className="summary">
@@ -360,6 +381,29 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
 
             {trashPair && <TrashModal pair={trashPair} onClose={() => setTrashPair(null)} />}
             {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
+        </div>
+    );
+}
+
+function OverallBar({ transferredBytes, totalBytes, percent, speedBps, filesDone, totalFiles }: OverallState) {
+    const pct = Math.max(0, Math.min(100, percent));
+    return (
+        <div className="overall">
+            <div className="overall-head">
+                <span className="overall-label">Overall sync</span>
+                <span className="overall-meta">
+                    {formatBytes(transferredBytes)} / {formatBytes(totalBytes)} · {formatSpeed(speedBps)}
+                </span>
+            </div>
+            <div className="progress-track">
+                <div className="progress-fill fill-overall" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="overall-foot">
+                <span>
+                    {filesDone} / {totalFiles} files
+                </span>
+                <span className="pct">{pct.toFixed(1)}%</span>
+            </div>
         </div>
     );
 }
