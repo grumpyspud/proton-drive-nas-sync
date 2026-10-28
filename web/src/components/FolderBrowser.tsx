@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { listDriveDir, listLocalDir } from '../api';
+import { useEffect, useState, type FormEvent } from 'react';
+import { listDriveDir, listLocalDir, mkdirLocal } from '../api';
 import type { DirListing } from '../types';
 
 interface Props {
@@ -14,11 +14,18 @@ interface Props {
  * folder fills the input (and drills into it); "Up one level" goes to the
  * parent. Local mode browses the filesystem (under the configured root);
  * drive mode browses Proton Drive by slash-separated name path.
+ *
+ * Drive mode adds a "My Files (entire drive)" row to select the root itself.
+ * Local mode adds a "New folder" action to create a subfolder of the current
+ * path.
  */
 export function FolderBrowser({ mode, value, placeholder, onChange }: Props) {
     const [listing, setListing] = useState<DirListing | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showNew, setShowNew] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [creating, setCreating] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -49,9 +56,37 @@ export function FolderBrowser({ mode, value, placeholder, onChange }: Props) {
         };
     }, [value, mode]);
 
+    async function createFolder(e: FormEvent) {
+        e.preventDefault();
+        if (!newName.trim()) return;
+        setCreating(true);
+        try {
+            const res = await mkdirLocal(value, newName.trim());
+            setNewName('');
+            setShowNew(false);
+            onChange(res.path);
+        } catch (err) {
+            setError((err as Error).message);
+        } finally {
+            setCreating(false);
+        }
+    }
+
     return (
         <div className="browser">
             <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} spellCheck={false} />
+            {mode === 'drive' && (
+                <button
+                    type="button"
+                    className={`browser-row browser-root${value === '' ? ' selected' : ''}`}
+                    onClick={() => onChange('')}
+                    title="Sync the entire My Files root"
+                >
+                    <span className="browser-icon">🏠</span>
+                    <span className="browser-name">My Files (entire drive)</span>
+                    {value === '' && <span className="browser-check">✓</span>}
+                </button>
+            )}
             {error && <div className="browser-note browser-error">{error}</div>}
             <div className="browser-list">
                 {listing && listing.parent !== null && (
@@ -72,6 +107,29 @@ export function FolderBrowser({ mode, value, placeholder, onChange }: Props) {
                 )}
                 {loading && <div className="browser-note">Loading…</div>}
             </div>
+            {mode === 'local' &&
+                (showNew ? (
+                    <form className="browser-new" onSubmit={createFolder}>
+                        <input
+                            autoFocus
+                            value={newName}
+                            placeholder="New folder name"
+                            onChange={(e) => setNewName(e.target.value)}
+                            spellCheck={false}
+                        />
+                        <button type="submit" className="btn btn-primary btn-sm" disabled={creating || !newName.trim()}>
+                            Create
+                        </button>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowNew(false)}>
+                            Cancel
+                        </button>
+                    </form>
+                ) : (
+                    <button type="button" className="browser-row browser-new-btn" onClick={() => setShowNew(true)}>
+                        <span className="browser-icon">＋</span>
+                        <span className="browser-name">New folder</span>
+                    </button>
+                ))}
         </div>
     );
 }

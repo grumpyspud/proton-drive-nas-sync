@@ -768,6 +768,46 @@ input:focus {
     color: var(--danger);
 }
 
+.browser-root {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+}
+
+.browser-root.selected {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.browser-check {
+    margin-left: auto;
+    font-weight: 700;
+}
+
+.browser-new {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.browser-new input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 9px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--ink);
+    background: var(--field-bg);
+}
+
+.browser-new-btn {
+    color: var(--ink-400);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+}
+
 /* ---------- Select ---------- */
 select.select {
     width: auto;

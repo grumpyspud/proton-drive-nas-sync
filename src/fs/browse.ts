@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 export interface DirFolder {
@@ -48,4 +48,27 @@ export function listLocalDir(requested: string): DirListing {
 
     const parent = abs === root ? null : dirname(abs);
     return { path: abs, root, parent, folders };
+}
+
+/**
+ * Creates a new subfolder `name` inside `parent` (absolute or relative to
+ * fsRoot()), confined to the allowed root. Returns the new folder's absolute
+ * path so the picker can navigate into it.
+ */
+export function mkdirLocal(parent: string, name: string): { ok: boolean; path: string } {
+    const root = fsRoot();
+    const abs = isAbsolute(parent) ? resolve(parent) : resolve(root, parent);
+    const rel = relative(root, abs);
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+        throw new Error('Path is outside the allowed root');
+    }
+    const clean = (name ?? '').trim();
+    if (!clean) throw new Error('Folder name is required');
+    if (/[\\/]/.test(clean) || clean === '.' || clean === '..') {
+        throw new Error('Invalid folder name');
+    }
+    const target = join(abs, clean);
+    if (existsSync(target)) throw new Error(`Already exists: ${target}`);
+    mkdirSync(target, { recursive: true });
+    return { ok: true, path: target };
 }

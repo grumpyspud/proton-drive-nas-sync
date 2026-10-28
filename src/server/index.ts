@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configDir } from '../crypto/keySource';
-import { listLocalDir } from '../fs/browse';
+import { listLocalDir, mkdirLocal } from '../fs/browse';
 import { findFolder, findOrCreateFolderPath } from '../fs/folders';
 import { nodeName } from '../fs/files';
 import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
@@ -149,6 +149,15 @@ app.get('/api/fs/list', requireAuth, (req, res) => {
     }
 });
 
+app.post('/api/fs/mkdir', requireAuth, (req, res) => {
+    const { parent, name } = (req.body ?? {}) as { parent?: string; name?: string };
+    try {
+        res.json(mkdirLocal(parent ?? '', name ?? ''));
+    } catch (error) {
+        res.status(400).json({ error: (error as Error).message });
+    }
+});
+
 app.get('/api/drive/list', requireAuth, async (req, res) => {
     try {
         const session = authService.getSession();
@@ -202,19 +211,20 @@ app.get('/api/pairs', requireAuth, (_req, res) => {
 
 app.post('/api/pairs', requireAuth, async (req, res) => {
     const { localDir, driveFolderName, realTime, autoSync, intervalSeconds } = (req.body ?? {}) as PairBody;
-    if (!localDir || !driveFolderName) {
-        res.status(400).json({ error: 'localDir and driveFolderName are required' });
+    if (!localDir) {
+        res.status(400).json({ error: 'localDir is required' });
         return;
     }
+    const driveFolder = driveFolderName ?? '';
     const db = new SyncDB(syncDbPath());
     try {
         const session = authService.getSession();
         const root = await session.sdk.getMyFilesRootFolder();
-        const driveFolderUid = await findOrCreateFolderPath(session.sdk, root.uid, driveFolderName);
+        const driveFolderUid = await findOrCreateFolderPath(session.sdk, root.uid, driveFolder);
         const pair: Pair = {
-            id: pairIdFor(localDir, driveFolderName),
+            id: pairIdFor(localDir, driveFolder),
             localDir,
-            driveFolderName,
+            driveFolderName: driveFolder,
             driveFolderUid,
             realTime: !!realTime,
             autoSync: !!autoSync,

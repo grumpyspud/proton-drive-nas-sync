@@ -82,6 +82,10 @@ export function listDriveDir(path: string): Promise<DirListing> {
     return request<DirListing>(`/api/drive/list?path=${encodeURIComponent(path)}`);
 }
 
+export function mkdirLocal(parent: string, name: string): Promise<{ ok: boolean; path: string }> {
+    return request<{ ok: boolean; path: string }>('/api/fs/mkdir', { method: 'POST', body: JSON.stringify({ parent, name }) });
+}
+
 export function listTrash(id: string): Promise<{ items: TrashItem[] }> {
     return request(`/api/pairs/${encodeURIComponent(id)}/trash`);
 }

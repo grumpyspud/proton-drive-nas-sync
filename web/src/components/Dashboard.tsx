@@ -250,7 +250,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                                     <div className="pair-main">
                                         <div className="pair-info">
                                             <div className="pair-name">
-                                                {p.driveFolderName}
+                                                {p.driveFolderName || 'My Files (root)'}
                                                 {p.realTime && (
                                                     <span className="badge badge-live">
                                                         <span className="pulse" /> live
@@ -407,7 +407,7 @@ function TrashModal({ pair, onClose }: { pair: Pair; onClose: () => void }) {
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-head">
-                    <h2>Trash — {pair.driveFolderName}</h2>
+                    <h2>Trash — {pair.driveFolderName || 'My Files (root)'}</h2>
                     <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
                         ✕
                     </button>
@@ -460,7 +460,7 @@ function AddPairForm({ onAdd }: { onAdd: (localDir: string, driveFolderName: str
 
     async function submit(e: FormEvent) {
         e.preventDefault();
-        if (!localDir || !folder) return;
+        if (!localDir) return;
         setBusy(true);
         try {
             await onAdd(localDir, folder, { realTime, autoSync, intervalSeconds: autoSync ? intervalSeconds : 0 });
@@ -500,7 +500,7 @@ function AddPairForm({ onAdd }: { onAdd: (localDir: string, driveFolderName: str
                     </select>
                 )}
             </div>
-            <button className="btn btn-primary" type="submit" disabled={busy || !localDir || !folder}>
+            <button className="btn btn-primary" type="submit" disabled={busy || !localDir}>
                 Add pair
             </button>
         </form>
