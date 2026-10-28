@@ -44,7 +44,7 @@ docker compose up -d
 
 Open `http://localhost:8787`, sign in, and add a folder pair. For a step-by-step
 walkthrough with screenshots, see [docs/SETUP.md](docs/SETUP.md). For full
-deployment instructions (including the NAS) and configuration reference,
+deployment instructions and configuration reference,
 see [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ### Development

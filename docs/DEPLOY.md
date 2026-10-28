@@ -1,7 +1,7 @@
 # Deploying proton-drive-nas-sync
 
-This guide covers building and running the Docker image, with notes for the
-NAS () that is the primary deployment target.
+This guide covers building and running the Docker image, with notes for NAS
+deployments (bind mounts, persistent volumes, and security).
 
 > **⚠️ Third-party application — not affiliated with, endorsed by, or supported
 > by Proton AG.**
@@ -40,10 +40,11 @@ docker compose up -d
 Then open `http://<host>:8787`, log in with your Proton credentials (2FA and a
 second-tier mailbox password are supported), and create a folder pair.
 
-### Example compose override for the NAS
+### Example compose override for a NAS
 
-On the , the RAID shares are mounted under `/media`. Point `/data` at the
-share you want to sync, and keep `/config` on persistent storage:
+On most NAS devices, shared folders live under a path such as `/media` or
+`/volume1`. Point `/data` at the share you want to sync, and keep `/config` on
+persistent storage:
 
 ```yaml
 services:
@@ -57,13 +58,13 @@ services:
       TZ: America/Chicago
       # PDN_ENCRYPTION_KEY: "openssl_rand_hex_32_output"
     volumes:
-      - /DATA/config/proton-drive-nas-sync:/config
-      - /media/media/photos:/data/photos
-      - /media/backup1/documents:/data/documents
+      - /path/to/config:/config
+      - /media/photos:/data/photos
+      - /media/documents:/data/documents
 ```
 
-- `/DATA` is the 's writable user space (the root FS is read-only), so it
-  is a good home for `/config`.
+- Put `/config` on persistent storage so the session blob and sync database
+  survive reboots and image rebuilds.
 - Bind each NAS folder you want to sync under `/data/<name>`. In the web UI, set
   the pair's **local folder** to that absolute path (e.g. `/data/photos`).
 

@@ -136,5 +136,5 @@ the sync engine:
 - Two mounted volumes, so updates never lose state:
   - `/config` — SQLite state DB, encrypted session blob, folder-pair config.
   - `/data` — the NAS-side watched folders.
-- Runs on any NAS that can run Docker (, TrueNAS, Synology, QNAP,
+- Runs on any NAS that can run Docker (TrueNAS, Synology, QNAP,
   Unraid, etc.).
