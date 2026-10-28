@@ -1,4 +1,12 @@
-import { HumanVerificationRequiredError, login, MailboxPasswordRequiredError, TwoFactorRequiredError, type LoginOptions } from '../auth/login';
+import {
+    beginLogin,
+    completeLogin,
+    HumanVerificationRequiredError,
+    MailboxPasswordRequiredError,
+    TwoFactorRequiredError,
+    type LoginOptions,
+    type PendingLogin,
+} from '../auth/login';
 import { logger } from '../logger';
 import { resetCryptoBackend } from '../proton/cryptoBackend';
 import { buildSession, type ProtonSession } from '../proton/sdk';
@@ -21,9 +29,16 @@ export interface LoginResponse {
  * encrypted session blob (reuse of M2) so a restart can resume without
  * re-entering credentials. Raw passwords are held only transiently during the
  * login call and are never written to disk.
+ *
+ * Login is a multi-step flow (password -> CAPTCHA -> 2FA -> two-password), and
+ * the /auth request must only be issued once. The intermediate state (scoped
+ * access token + SRP proof result) is kept in `pendingSession`/`pending`
+ * between steps so the follow-up steps never re-issue /auth.
  */
 class AuthService {
     private session: ProtonSession | null = null;
+    private pendingSession: ProtonSession | null = null;
+    private pending: PendingLogin | null = null;
 
     isAuthenticated(): boolean {
         return this.session !== null;
@@ -34,13 +49,36 @@ class AuthService {
         return this.session;
     }
 
-    async login(username: string, password: string, twoFactorCode?: string, mailboxPassword?: string, humanVerificationToken?: string): Promise<LoginResponse> {
-        const credentials = createSessionCredentials({ persist: true });
-        const session = buildSession(credentials, logger);
-        const base: LoginOptions = { username, password, twoFactorCode, mailboxPassword, humanVerificationToken };
+    async login(
+        username: string,
+        password: string,
+        twoFactorCode?: string,
+        mailboxPassword?: string,
+        humanVerificationToken?: string,
+    ): Promise<LoginResponse> {
         try {
-            const result = await login(session.accountApi, session.apiClient, session.srp, credentials, logger, base);
+            // Mid-flow: continue from the pending state (2FA / two-password).
+            if (this.pending && this.pendingSession) {
+                const result = await completeLogin(this.pendingSession, this.pending, logger, twoFactorCode, mailboxPassword);
+                this.session = this.pendingSession;
+                this.pendingSession = null;
+                this.pending = null;
+                logger.info(`Logged in as ${username} (uid=${result.uid})`);
+                return { authenticated: true, uid: result.uid };
+            }
+
+            // Fresh login: build a session and run phase 1 (auth/info + auth).
+            const credentials = createSessionCredentials({ persist: true });
+            const session = buildSession(credentials, logger);
+            const options: LoginOptions = { username, password, humanVerificationToken };
+            const pending = await beginLogin(session, logger, options);
+            this.pendingSession = session;
+            this.pending = pending;
+
+            const result = await completeLogin(session, pending, logger, twoFactorCode, mailboxPassword);
             this.session = session;
+            this.pendingSession = null;
+            this.pending = null;
             logger.info(`Logged in as ${username} (uid=${result.uid})`);
             return { authenticated: true, uid: result.uid };
         } catch (error) {
@@ -61,6 +99,9 @@ class AuthService {
             }
             const message = (error as Error).message ?? String(error);
             logger.error('Login failed', error);
+            // Hard failure — drop any partial state so the next attempt starts fresh.
+            this.pendingSession = null;
+            this.pending = null;
             return { authenticated: false, error: message };
         }
     }
@@ -88,6 +129,8 @@ class AuthService {
             await this.session.credentials.signOut().catch(() => {});
         }
         this.session = null;
+        this.pendingSession = null;
+        this.pending = null;
         resetCryptoBackend();
         logger.info('Logged out');
     }

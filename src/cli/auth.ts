@@ -1,4 +1,4 @@
-import { login, MailboxPasswordRequiredError, TwoFactorRequiredError, type LoginOptions } from '../auth/login';
+import { beginLogin, completeLogin, MailboxPasswordRequiredError, TwoFactorRequiredError, type LoginOptions } from '../auth/login';
 import { logger } from '../logger';
 import { buildSession, type ProtonSession } from '../proton/sdk';
 import { createSessionCredentials } from '../session';
@@ -20,31 +20,27 @@ export async function loginInteractive(options: { persist?: boolean } = {}): Pro
     const credentials = createSessionCredentials({ persist: options.persist ?? false });
     const session = buildSession(credentials, logger);
 
-    const base: LoginOptions = {
-        username,
-        password,
-        twoFactorCode: process.env.PDN_TWO_FACTOR,
-        mailboxPassword: process.env.PDN_MAILBOX_PASSWORD,
-    };
+    const base: LoginOptions = { username, password };
 
+    const pending = await beginLogin(session, logger, base);
+
+    let twoFactorCode = process.env.PDN_TWO_FACTOR;
+    let mailboxPassword = process.env.PDN_MAILBOX_PASSWORD;
+
+    // Loop until completeLogin succeeds, prompting for 2FA / mailbox as needed.
     let result;
-    try {
-        result = await login(session.accountApi, session.apiClient, session.srp, credentials, logger, base);
-    } catch (error) {
-        if (error instanceof TwoFactorRequiredError) {
-            const code = await prompt('2FA code: ');
-            result = await login(session.accountApi, session.apiClient, session.srp, credentials, logger, {
-                ...base,
-                twoFactorCode: code,
-            });
-        } else if (error instanceof MailboxPasswordRequiredError) {
-            const mailbox = await promptHidden('Mailbox password: ');
-            result = await login(session.accountApi, session.apiClient, session.srp, credentials, logger, {
-                ...base,
-                mailboxPassword: mailbox,
-            });
-        } else {
-            throw error;
+    while (true) {
+        try {
+            result = await completeLogin(session, pending, logger, twoFactorCode, mailboxPassword);
+            break;
+        } catch (error) {
+            if (error instanceof TwoFactorRequiredError) {
+                twoFactorCode = await prompt('2FA code: ');
+            } else if (error instanceof MailboxPasswordRequiredError) {
+                mailboxPassword = await promptHidden('Mailbox password: ');
+            } else {
+                throw error;
+            }
         }
     }
 

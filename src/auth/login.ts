@@ -8,8 +8,6 @@ import type { Logger } from '../logger';
 export interface LoginOptions {
     username: string;
     password: string;
-    twoFactorCode?: string;
-    mailboxPassword?: string;
     humanVerificationToken?: string;
 }
 
@@ -24,6 +22,14 @@ export interface HumanVerificationDetails {
     webUrl?: string;
     token?: string;
     methods: string[];
+}
+
+/** The subset of the Proton session the login flow needs. */
+export interface LoginSession {
+    accountApi: AccountApi;
+    apiClient: ApiClient;
+    srp: Srp;
+    credentials: SessionCredentials;
 }
 
 interface AuthInfo {
@@ -42,6 +48,18 @@ interface AuthResponse {
     PasswordMode?: number;
     TwoFactor?: number;
     '2FA'?: { Enabled?: number };
+}
+
+/**
+ * State persisted between the password step and the 2FA / two-password steps.
+ * The scoped access token from /auth is armed on the session, so the follow-up
+ * steps never re-issue /auth (which would re-trigger CAPTCHA / invalidate the
+ * single-use human-verification token).
+ */
+export interface PendingLogin {
+    authResponse: AuthResponse;
+    loginPassword: string;
+    twoFactorDone: boolean;
 }
 
 function hvHeaders(token?: string): Record<string, string> {
@@ -125,27 +143,18 @@ export class MailboxPasswordRequiredError extends Error {
 }
 
 /**
- * Full password login, extending the SDK's reference `authViaPassword` with the
- * pieces it omits: TOTP 2FA, two-password mode, and Proton's human-verification
- * (CAPTCHA) anti-abuse challenge (error 9001).
- *
- * Flow:
- *   1. /auth/info  -> SRP parameters
- *   2. getSrp()    -> client proof + ephemeral
- *   3. /auth       -> UID/accessToken/refreshToken + server proof (may 9001)
- *   4. verify server proof
- *   5. if 2FA enabled -> /auth/v4/2fa with the TOTP code
- *   6. derive the user key password (mailbox password in two-password mode)
- *   7. store session + user key password
+ * Phase 1 of login: /auth/info -> SRP -> /auth (with the human-verification
+ * token when retrying a 9001). On success the scoped access token is armed on
+ * the session and the pending state is returned. Throws
+ * HumanVerificationRequiredError on code 9001.
  */
-export async function login(
-    accountApi: AccountApi,
-    apiClient: ApiClient,
-    srp: Srp,
-    credentials: SessionCredentials,
+export async function beginLogin(
+    session: LoginSession,
     logger: Logger,
     options: LoginOptions,
-): Promise<LoginResult> {
+): Promise<PendingLogin> {
+    const { apiClient, srp, credentials } = session;
+
     logger.debug('Fetching auth info');
     const info = await postInfo(apiClient, options.username, options.humanVerificationToken);
     if (!info.Version || !info.Modulus || !info.SRPSession || !info.ServerEphemeral || !info.Salt) {
@@ -181,31 +190,48 @@ export async function login(
     if (authResponse.ServerProof !== expectedServerProof) {
         throw new Error('Server proof verification failed');
     }
-
-    const twoFactorEnabled = (authResponse['2FA']?.Enabled ?? authResponse.TwoFactor ?? 0) !== 0;
-    if (twoFactorEnabled && !options.twoFactorCode) {
-        throw new TwoFactorRequiredError();
-    }
     if (!authResponse.UID || !authResponse.AccessToken) {
         throw new Error('Missing UID or AccessToken');
     }
 
-    // Arm the authenticated HTTP client before any authenticated call.
     await credentials.setSessionInfo({
         uid: authResponse.UID,
         accessToken: authResponse.AccessToken,
         ...(authResponse.RefreshToken !== undefined && { refreshToken: authResponse.RefreshToken }),
     });
 
-    if (twoFactorEnabled) {
+    return { authResponse, loginPassword: options.password, twoFactorDone: false };
+}
+
+/**
+ * Phase 2 of login: submit 2FA (if enabled and not yet done) then derive the
+ * user key password (mailbox password in two-password mode). Resumes from the
+ * pending state — /auth is never re-issued.
+ */
+export async function completeLogin(
+    session: LoginSession,
+    pending: PendingLogin,
+    logger: Logger,
+    twoFactorCode?: string,
+    mailboxPassword?: string,
+): Promise<LoginResult> {
+    const { accountApi, apiClient, srp, credentials } = session;
+    const { authResponse, loginPassword } = pending;
+
+    const twoFactorEnabled = (authResponse['2FA']?.Enabled ?? authResponse.TwoFactor ?? 0) !== 0;
+    if (twoFactorEnabled && !pending.twoFactorDone) {
+        if (!twoFactorCode) {
+            throw new TwoFactorRequiredError();
+        }
         logger.debug('Submitting 2FA code');
         await apiClient.authenticatedRequest
-            .post(`${apiClient.baseUrlWithProtocol}/auth/v4/2fa`, { json: { TwoFactorCode: options.twoFactorCode } })
+            .post(`${apiClient.baseUrlWithProtocol}/auth/v4/2fa`, { json: { TwoFactorCode: twoFactorCode } })
             .json();
+        pending.twoFactorDone = true;
     }
 
     const passwordMode = authResponse.PasswordMode ?? 1;
-    const keyPassword = passwordMode === 2 ? options.mailboxPassword : options.password;
+    const keyPassword = passwordMode === 2 ? mailboxPassword : loginPassword;
     if (!keyPassword) {
         throw new MailboxPasswordRequiredError();
     }
@@ -220,8 +246,8 @@ export async function login(
     await credentials.setUserKeyPassword(userKeyPassword);
 
     return {
-        uid: authResponse.UID,
-        accessToken: authResponse.AccessToken,
+        uid: authResponse.UID!,
+        accessToken: authResponse.AccessToken!,
         refreshToken: authResponse.RefreshToken,
         passwordMode,
     };

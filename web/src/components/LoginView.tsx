@@ -78,6 +78,7 @@ export function LoginView({ onLogin, theme, onToggleTheme }: Props) {
                 setNeedsTwoFactor(true);
             } else if (result.mailboxPasswordRequired) {
                 setHv(null);
+                setNeedsTwoFactor(false);
                 setNeedsMailbox(true);
             } else {
                 setError(result.error ?? 'Login failed');
