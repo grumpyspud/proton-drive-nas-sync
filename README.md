@@ -42,9 +42,10 @@ docker build -t proton-drive-nas-sync:latest .
 docker compose up -d
 ```
 
-Open `http://localhost:8787`, sign in, and add a folder pair. See
-[docs/DEPLOY.md](docs/DEPLOY.md) for full deployment instructions (including the
-NAS) and configuration reference.
+Open `http://localhost:8787`, sign in, and add a folder pair. For a step-by-step
+walkthrough with screenshots, see [docs/SETUP.md](docs/SETUP.md). For full
+deployment instructions (including the NAS) and configuration reference,
+see [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ### Development
 
