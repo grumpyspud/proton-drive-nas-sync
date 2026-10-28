@@ -15,6 +15,8 @@ function lineFor(event: SyncProgressEvent): string | null {
             return `[sync-start] ${event.driveFolderName || '(root)'} local=${event.localDir}`;
         case 'item':
             return `[${event.action}] ${event.relPath}`;
+        case 'log':
+            return event.message;
         case 'sync-complete':
             return `[sync-complete] uploaded=${event.summary.uploaded} downloaded=${event.summary.downloaded} skipped=${event.summary.skipped} conflicts=${event.summary.conflicts} driveTrashed=${event.summary.driveTrashed} localRecycled=${event.summary.localRecycled}`;
         case 'sync-error':

@@ -122,7 +122,9 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         }
     }
     if (localPartials.length || drivePartials.length) {
-        log(`cleaned ${localPartials.length} local + ${drivePartials.length} Drive partial file(s)`);
+        const msg = `cleaned ${localPartials.length} local + ${drivePartials.length} Drive partial file(s)`;
+        log(msg);
+        onProgress?.({ type: 'log', message: msg });
     }
 
     const localByRel = new Map(local.map((e) => [e.relPath, e]));

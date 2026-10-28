@@ -778,7 +778,8 @@ input:focus {
     color: var(--tag-ok-fg);
 }
 .tag-skip,
-.tag-mkdir-drive {
+.tag-mkdir-drive,
+.tag-info {
     background: var(--bg);
     color: var(--ink-400);
 }

@@ -51,6 +51,7 @@ export type SyncProgressEvent =
     | { type: 'sync-paused' }
     | { type: 'sync-resumed' }
     | { type: 'sync-stopped' }
+    | { type: 'log'; message: string }
     | {
           type: 'deletion-hold';
           pairId: string;

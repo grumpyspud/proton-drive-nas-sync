@@ -136,6 +136,13 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                         return next;
                     });
                     break;
+                case 'log':
+                    setTotalItems((t) => t + 1);
+                    setItems((prev) => {
+                        const next = [...prev, { action: 'info', relPath: ev.message }];
+                        return next.length > MAX_LOG ? next.slice(-MAX_LOG) : next;
+                    });
+                    break;
                 case 'sync-complete':
                     setSyncing(false);
                     setSummary(ev.summary);
