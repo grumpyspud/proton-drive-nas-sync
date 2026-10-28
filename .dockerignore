@@ -1,0 +1,33 @@
+# Version control
+.git
+.gitignore
+
+# Dependencies (reinstalled via `npm ci` inside the image)
+node_modules
+
+# Build output (rebuilt inside the image)
+web/dist
+web/node_modules
+dist
+build
+
+# Local state / secrets — never bake into the image
+config
+data
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log
+.env
+.env.*
+
+# Docs & meta (not needed in the build context)
+README.md
+ARCHITECTURE.md
+docs
+LICENSE
+Dockerfile
+.dockerignore
+docker-compose.yml

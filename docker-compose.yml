@@ -1,0 +1,24 @@
+services:
+  proton-drive-nas-sync:
+    image: proton-drive-nas-sync:latest
+    container_name: proton-drive-nas-sync
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    environment:
+      TZ: America/Chicago
+      # Recommended for production: pin the session-blob encryption key so it
+      # survives container/image rebuilds. Generate once and reuse it:
+      #   openssl rand -hex 32
+      # If unset, the app auto-provisions a key at /config/encryption.key.
+      # PDN_ENCRYPTION_KEY: "replace_with_64_hex_characters"
+    volumes:
+      # Holds the encrypted session blob, the sync database, and (when no
+      # PDN_ENCRYPTION_KEY is set) the auto-provisioned keyfile.
+      - ./config:/config
+      # Put the local folders you want to sync here. In the web UI, create a
+      # pair whose local folder is an absolute path under /data (e.g. /data/photos).
+      - ./data:/data
+    # To run as a non-root user, uncomment and set PUID/PGID to your NAS user,
+    # and make sure ./config and ./data on the host are owned by that uid:gid.
+    # user: "1000:1000"
