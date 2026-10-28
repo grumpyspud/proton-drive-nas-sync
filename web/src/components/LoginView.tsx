@@ -20,11 +20,26 @@ interface HvChallenge {
  * verification tab's devtools console BEFORE solving, captures the composite
  * token for manual entry.
  */
-const CAPTURE_SNIPPET = `window.addEventListener('message', function (e) {
-  var d = e.data || {};
-  var t = (d.payload && d.payload.token) ? d.payload.token : d.token;
-  if (t) { console.log('PDN TOKEN:', t); alert('PDN TOKEN:\\n\\n' + t); }
-});`;
+const CAPTURE_SNIPPET = `(function () {
+  var done = false;
+  function grab(t) {
+    if (done || !t) return;
+    done = true;
+    console.log('PDN TOKEN:', t);
+    try { navigator.clipboard.writeText(t); } catch (e) {}
+    window.prompt('Your token (copy it):', t);
+  }
+  function read(data) {
+    try {
+      if (data && data.type === 'HUMAN_VERIFICATION_SUCCESS' && data.payload) return data.payload.token || null;
+    } catch (e) { return null; }
+  }
+  window.addEventListener('message', function (e) { var t = read(e && e.data); if (t) grab(t); });
+  try {
+    var o = window.postMessage;
+    window.postMessage = function (data) { var t = read(data); if (t) grab(t); return o.apply(this, arguments); };
+  } catch (e) {}
+})();`;
 
 export function LoginView({ onLogin, theme, onToggleTheme }: Props) {
     const [username, setUsername] = useState('');
