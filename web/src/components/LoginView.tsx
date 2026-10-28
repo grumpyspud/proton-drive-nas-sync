@@ -55,8 +55,10 @@ export function LoginView({ onLogin, theme, onToggleTheme }: Props) {
                 setHv({ webUrl: result.webUrl, originalToken: result.humanVerificationToken });
                 setHvToken('');
             } else if (result.twoFactorRequired) {
+                setHv(null);
                 setNeedsTwoFactor(true);
             } else if (result.mailboxPasswordRequired) {
+                setHv(null);
                 setNeedsMailbox(true);
             } else {
                 setError(result.error ?? 'Login failed');
