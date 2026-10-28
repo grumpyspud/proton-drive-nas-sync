@@ -1,8 +1,9 @@
 import { createReadStream } from 'node:fs';
 import { stat, writeFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
-import type { ProtonDriveClient } from '@protontech/drive-sdk';
+import type { FileUploader, ProtonDriveClient } from '@protontech/drive-sdk';
 
 /**
  * File-level operations on top of the Drive SDK. These primitives are the
@@ -13,8 +14,8 @@ import type { ProtonDriveClient } from '@protontech/drive-sdk';
  * to disk for large files.
  */
 
-export async function sha1OfFile(path: string): Promise<string> {
-    const hash = createHash('sha1');
+async function hashFile(path: string, algorithm: string): Promise<string> {
+    const hash = createHash(algorithm);
     await new Promise<void>((resolve, reject) => {
         createReadStream(path)
             .on('data', (chunk) => hash.update(chunk))
@@ -22,6 +23,14 @@ export async function sha1OfFile(path: string): Promise<string> {
             .on('error', reject);
     });
     return hash.digest('hex');
+}
+
+export function sha1OfFile(path: string): Promise<string> {
+    return hashFile(path, 'sha1');
+}
+
+export function sha256OfFile(path: string): Promise<string> {
+    return hashFile(path, 'sha256');
 }
 
 export function mimeTypeFor(name: string): string {
@@ -68,6 +77,29 @@ export async function uploadFile(
         modificationTime: stats.mtime,
     });
 
+    return uploadTo(uploader, localPath);
+}
+
+/**
+ * Uploads new content as a NEW REVISION of an existing file (update in place).
+ * `getFileUploader` rejects when the name already exists, so an update must go
+ * through `getFileRevisionUploader`.
+ */
+export async function uploadFileRevision(sdk: ProtonDriveClient, nodeUid: string, localPath: string): Promise<string> {
+    const stats = await stat(localPath);
+    const expectedSha1 = await sha1OfFile(localPath);
+
+    const uploader = await sdk.getFileRevisionUploader(nodeUid, {
+        mediaType: mimeTypeFor(basename(localPath)),
+        expectedSize: stats.size,
+        expectedSha1,
+        modificationTime: stats.mtime,
+    });
+
+    return uploadTo(uploader, localPath);
+}
+
+async function uploadTo(uploader: FileUploader, localPath: string): Promise<string> {
     const stream = Readable.toWeb(createReadStream(localPath)) as unknown as ReadableStream<Uint8Array>;
     const controller = await uploader.uploadFromStream(stream, []);
     const { nodeUid } = await controller.completion();
