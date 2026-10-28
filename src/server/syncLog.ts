@@ -25,6 +25,12 @@ function lineFor(event: SyncProgressEvent): string | null {
             return '[sync-resumed]';
         case 'sync-stopped':
             return '[sync-stopped]';
+        case 'deletion-hold':
+            return `[deletion-hold] ${event.deletions} of ${event.totalTracked} tracked (${event.pct.toFixed(1)}%) would be deleted`;
+        case 'deletion-confirmed':
+            return '[deletion-confirmed]';
+        case 'deletion-cancelled':
+            return '[deletion-cancelled]';
         case 'transfer':
             return null; // per-transfer progress is too noisy for the log
         default:

@@ -5,7 +5,7 @@ import { downloadFile, sha1OfFile, uploadFile, uploadFileRevision } from '../fs/
 import type { TransferProgress } from '../fs/files';
 import type { SyncDB } from '../state/syncDb';
 import { SpeedMeter, type ProgressHandler } from './progress';
-import { assertSourceAvailable, checkDeletionTripwire } from './safety';
+import { assertSourceAvailable, checkDeletionTripwire, DeletionTripwireError } from './safety';
 import { drain } from './util';
 import { driveSize, walkDriveTree, walkLocalTree } from './walk';
 import type { DriveEntry, LocalEntry } from './walk';
@@ -25,6 +25,8 @@ export interface SyncOptions {
     shouldAbort?: () => boolean;
     /** Per-file bars are only emitted for files this size or larger (bytes). */
     progressMinBytes?: number;
+    /** When true, skip the deletion-rate tripwire (user already confirmed). */
+    allowDeletions?: boolean;
 }
 
 export interface SyncResult {
@@ -73,7 +75,7 @@ function driveSha1(fingerprint: string | null | undefined): string {
  * caller emits `sync-complete` (with the returned summary) or `sync-error`.
  */
 export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
-    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress, shouldAbort, progressMinBytes = DEFAULT_PROGRESS_MIN_BYTES } = options;
+    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress, shouldAbort, progressMinBytes = DEFAULT_PROGRESS_MIN_BYTES, allowDeletions } = options;
     const result: SyncResult = { uploaded: 0, downloaded: 0, localRecycled: 0, driveTrashed: 0, conflicts: 0, skipped: 0 };
     const checkAbort = (): void => {
         if (shouldAbort?.()) throw new SyncAbortedError();
@@ -432,7 +434,17 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     const totalDeletions = driveDeletions.length + localDeletions.length;
     checkAbort();
     if (totalDeletions > 0) {
-        checkDeletionTripwire({ totalTracked: stored.length, deletions: totalDeletions, thresholdPct: deletionThresholdPct });
+        const trip = checkDeletionTripwire({ totalTracked: stored.length, deletions: totalDeletions, thresholdPct: deletionThresholdPct });
+        if (trip.tripped && !allowDeletions) {
+            throw new DeletionTripwireError({
+                totalTracked: stored.length,
+                deletions: totalDeletions,
+                thresholdPct: trip.threshold,
+                pct: trip.pct,
+                driveTrash: driveDeletions.map((d) => d.relPath),
+                localRecycle: localDeletions.map((d) => d.relPath),
+            });
+        }
 
         if (driveDeletions.length > 0) {
             await drain(sdk.trashNodes(driveDeletions.map((d) => d.uid)));

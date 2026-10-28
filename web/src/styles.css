@@ -574,6 +574,95 @@ input:focus {
     margin-top: 6px;
 }
 
+/* ---------- Deletion hold (tripwire confirmation) ---------- */
+.deletion-hold {
+    margin-bottom: 16px;
+    padding: 14px;
+    border: 1px solid var(--danger);
+    border-radius: var(--radius-sm);
+    background: var(--tag-warn-bg, var(--bg));
+}
+
+.dh-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.dh-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--danger);
+}
+
+.dh-pct {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--danger);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.dh-desc {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--ink);
+    line-height: 1.5;
+}
+
+.dh-breakdown {
+    font-size: 12px;
+    color: var(--ink-400);
+    margin-bottom: 8px;
+}
+
+.dh-sep {
+    margin: 0 6px;
+}
+
+.dh-preview {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    font-size: 12px;
+    max-height: 160px;
+    overflow: auto;
+}
+
+.dh-preview li {
+    display: flex;
+    gap: 8px;
+    padding: 2px 0;
+}
+
+.dh-side {
+    color: var(--ink-400);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.dh-path {
+    color: var(--ink-600);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.dh-more {
+    color: var(--ink-400);
+    font-style: italic;
+}
+
+.dh-actions {
+    display: flex;
+    gap: 8px;
+}
+
 /* ---------- Summary ---------- */
 .summary {
     margin-top: 8px;

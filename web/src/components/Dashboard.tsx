@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { addPair, clearTrash, deleteTrashItem, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, type PairSettings } from '../api';
-import type { OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
+import { addPair, cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, type PairSettings } from '../api';
+import type { DeletionHold, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { FolderBrowser } from './FolderBrowser';
@@ -42,6 +42,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
     const [paused, setPaused] = useState(false);
     const [showLogs, setShowLogs] = useState(false);
     const [overall, setOverall] = useState<OverallState | null>(null);
+    const [deletionHold, setDeletionHold] = useState<DeletionHold | null>(null);
 
     const reload = useCallback(async () => {
         try {
@@ -91,6 +92,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                     setTotalItems(0);
                     setActive(new Map());
                     setOverall(null);
+                    setDeletionHold(null);
                     break;
                 case 'sync-plan':
                     setOverall({ transferredBytes: 0, totalBytes: ev.totalBytes, percent: 0, speedBps: 0, filesDone: 0, totalFiles: ev.totalFiles });
@@ -161,6 +163,24 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                     setActive(new Map());
                     setOverall(null);
                     break;
+                case 'deletion-hold':
+                    setSyncing(false);
+                    setActive(new Map());
+                    setOverall(null);
+                    setDeletionHold({
+                        pairId: ev.pairId,
+                        totalTracked: ev.totalTracked,
+                        deletions: ev.deletions,
+                        pct: ev.pct,
+                        thresholdPct: ev.thresholdPct,
+                        driveTrash: ev.driveTrash,
+                        localRecycle: ev.localRecycle,
+                    });
+                    break;
+                case 'deletion-confirmed':
+                case 'deletion-cancelled':
+                    setDeletionHold(null);
+                    break;
             }
         };
         return () => es.close();
@@ -204,6 +224,24 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
         setError(null);
         try {
             await stopSync();
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function onConfirmDeletion(id: string) {
+        setError(null);
+        try {
+            await confirmDeletion(id);
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function onCancelDeletion(id: string) {
+        setError(null);
+        try {
+            await cancelDeletion(id);
         } catch (err) {
             setError((err as Error).message);
         }
@@ -272,6 +310,14 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
                         </div>
 
                         {error && <div className="alert">{error}</div>}
+
+                        {deletionHold && (
+                            <DeletionHoldCard
+                                hold={deletionHold}
+                                onConfirm={() => void onConfirmDeletion(deletionHold.pairId)}
+                                onCancel={() => void onCancelDeletion(deletionHold.pairId)}
+                            />
+                        )}
 
                         {overall && (overall.totalFiles > 0 || overall.totalBytes > 0) && <OverallBar {...overall} />}
 
@@ -381,6 +427,54 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout }: Props) {
 
             {trashPair && <TrashModal pair={trashPair} onClose={() => setTrashPair(null)} />}
             {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
+        </div>
+    );
+}
+
+function DeletionHoldCard({ hold, onConfirm, onCancel }: { hold: DeletionHold; onConfirm: () => void; onCancel: () => void }) {
+    const pct = hold.pct.toFixed(1);
+    const driveCount = hold.driveTrash.length;
+    const localCount = hold.localRecycle.length;
+    const preview: Array<{ side: string; path: string }> = [
+        ...hold.driveTrash.slice(0, 5).map((p) => ({ side: 'Drive → trash', path: p })),
+        ...hold.localRecycle.slice(0, 5).map((p) => ({ side: 'Local → recycle', path: p })),
+    ];
+    const more = hold.deletions - preview.length;
+    return (
+        <div className="deletion-hold">
+            <div className="dh-head">
+                <span className="dh-title">⚠ Deletion requires confirmation</span>
+                <span className="dh-pct">{pct}%</span>
+            </div>
+            <p className="dh-desc">
+                This sync would delete <strong>{hold.deletions}</strong> of <strong>{hold.totalTracked}</strong> tracked files (
+                {pct}%), which exceeds the {hold.thresholdPct}% safety threshold. This usually means a source went offline — but if
+                you intentionally deleted these, confirm to proceed.
+            </p>
+            <div className="dh-breakdown">
+                {driveCount > 0 && <span>{driveCount} would be trashed on Proton Drive</span>}
+                {driveCount > 0 && localCount > 0 && <span className="dh-sep">·</span>}
+                {localCount > 0 && <span>{localCount} would be recycled locally (.pdn-trash)</span>}
+            </div>
+            {preview.length > 0 && (
+                <ul className="dh-preview">
+                    {preview.map((p, i) => (
+                        <li key={i}>
+                            <span className="dh-side">{p.side}</span>
+                            <span className="dh-path">{p.path}</span>
+                        </li>
+                    ))}
+                    {more > 0 && <li className="dh-more">… and {more} more</li>}
+                </ul>
+            )}
+            <div className="dh-actions">
+                <button className="btn btn-danger" onClick={onConfirm}>
+                    Confirm & proceed
+                </button>
+                <button className="btn btn-ghost" onClick={onCancel}>
+                    Cancel
+                </button>
+            </div>
         </div>
     );
 }

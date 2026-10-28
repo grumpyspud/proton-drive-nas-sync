@@ -40,7 +40,10 @@ export type SyncProgressEvent =
     | { type: 'sync-error'; message: string }
     | { type: 'sync-paused' }
     | { type: 'sync-resumed' }
-    | { type: 'sync-stopped' };
+    | { type: 'sync-stopped' }
+    | { type: 'deletion-hold'; pairId: string; totalTracked: number; deletions: number; pct: number; thresholdPct: number; driveTrash: string[]; localRecycle: string[] }
+    | { type: 'deletion-confirmed' }
+    | { type: 'deletion-cancelled' };
 
 export interface TransferState {
     relPath: string;
@@ -58,6 +61,16 @@ export interface OverallState {
     speedBps: number;
     filesDone: number;
     totalFiles: number;
+}
+
+export interface DeletionHold {
+    pairId: string;
+    totalTracked: number;
+    deletions: number;
+    pct: number;
+    thresholdPct: number;
+    driveTrash: string[];
+    localRecycle: string[];
 }
 
 export interface StorageInfo {

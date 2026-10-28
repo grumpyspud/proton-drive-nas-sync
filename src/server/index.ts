@@ -10,6 +10,7 @@ import { nodeName } from '../fs/files';
 import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
 import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce, SyncAbortedError } from '../engine/sync';
+import { DeletionTripwireError } from '../engine/safety';
 import type { ProgressHandler, SyncProgressEvent } from '../engine/progress';
 import { logger } from '../logger';
 import { SyncDB, type Pair } from '../state/syncDb';
@@ -64,10 +65,22 @@ let syncing = false;
 let paused = false;
 let stopRequested = false;
 
-async function runSync(pairId: string): Promise<boolean> {
+interface PendingDeletion {
+    pairId: string;
+    totalTracked: number;
+    deletions: number;
+    pct: number;
+    thresholdPct: number;
+    driveTrash: string[];
+    localRecycle: string[];
+}
+let pendingDeletion: PendingDeletion | null = null;
+
+async function runSync(pairId: string, allowDeletions = false): Promise<boolean> {
     if (syncing || paused) return false;
     syncing = true;
     stopRequested = false;
+    pendingDeletion = null;
     const db = new SyncDB(syncDbPath());
     try {
         const pair = db.getPair(pairId);
@@ -90,6 +103,7 @@ async function runSync(pairId: string): Promise<boolean> {
             onProgress,
             shouldAbort: () => paused || stopRequested,
             progressMinBytes: PROGRESS_MIN_BYTES,
+            allowDeletions,
         });
         db.markSynced(pairId);
         broadcast({ type: 'sync-complete', summary });
@@ -98,6 +112,11 @@ async function runSync(pairId: string): Promise<boolean> {
         if (error instanceof SyncAbortedError) {
             if (paused) broadcast({ type: 'sync-paused' });
             else broadcast({ type: 'sync-stopped' });
+            return true;
+        }
+        if (error instanceof DeletionTripwireError) {
+            pendingDeletion = { pairId, ...error.info };
+            broadcast({ type: 'deletion-hold', pairId, ...error.info });
             return true;
         }
         logger.error('Sync failed', error);
@@ -400,6 +419,26 @@ app.post('/api/sync/:id', requireAuth, async (req, res) => {
         return;
     }
     res.json({ started: true });
+});
+
+app.post('/api/sync/:id/confirm-deletion', requireAuth, (req, res) => {
+    const pd = pendingDeletion;
+    if (!pd || pd.pairId !== req.params.id) {
+        res.status(404).json({ error: 'No pending deletion to confirm' });
+        return;
+    }
+    pendingDeletion = null;
+    broadcast({ type: 'deletion-confirmed' });
+    res.json({ ok: true });
+    void runSync(req.params.id as string, true);
+});
+
+app.post('/api/sync/:id/cancel-deletion', requireAuth, (req, res) => {
+    if (pendingDeletion && pendingDeletion.pairId === req.params.id) {
+        pendingDeletion = null;
+        broadcast({ type: 'deletion-cancelled' });
+    }
+    res.json({ ok: true });
 });
 
 app.get('/api/logs', requireAuth, (req, res) => {
