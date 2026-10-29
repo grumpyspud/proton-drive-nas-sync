@@ -65,7 +65,9 @@ function writeFileAtomic(filePath: string, data: string | Buffer, mode = 0o600):
 const listeners = new Set<Response>();
 function broadcast(event: SyncProgressEvent): void {
     const data = `data: ${JSON.stringify(event)}\n\n`;
-    for (const res of listeners) res.write(data);
+    for (const res of listeners) {
+        if (!res.destroyed && !res.writableEnded) res.write(data);
+    }
     appendSyncLog(event);
 }
 
@@ -829,7 +831,16 @@ app.get('/api/events', (req, res) => {
     res.flushHeaders();
     res.write('retry: 2000\n\n');
     listeners.add(res);
-    req.on('close', () => listeners.delete(res));
+    // Keep-alive heartbeat: SSE comment frames prevent idle-timeout drops on
+    // NAT/DERP links (a dropped stream surfaces in the browser as "NetworkError").
+    const heartbeat = setInterval(() => {
+        if (!res.destroyed && !res.writableEnded) res.write(': ping\n\n');
+    }, 15_000);
+    const cleanup = () => {
+        clearInterval(heartbeat);
+        listeners.delete(res);
+    };
+    req.on('close', cleanup);
 });
 
 // ---- static frontend (built via `npm run web:build` -> web/dist) ----
@@ -867,6 +878,15 @@ async function schedulerTick(): Promise<void> {
     // Never auto-trigger while a sync is already running (manual or scheduled),
     // while paused, or while a deletion confirmation is awaiting the user.
     if (syncing || paused || pendingDeletion) return;
+
+    // Self-heal the Proton session: a restart leaves the in-memory session empty
+    // until a browser hits /api/auth/status. Try to resume once per tick; if it
+    // still can't resume, stay silent rather than spamming "Not authenticated".
+    if (!authService.isAuthenticated()) {
+        const resumed = await authService.resume();
+        if (!resumed) return;
+    }
+
     const ids: string[] = [];
     {
         const db = new SyncDB(syncDbPath());

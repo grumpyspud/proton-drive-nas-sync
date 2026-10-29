@@ -59,6 +59,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [deletionHold, setDeletionHold] = useState<DeletionHold | null>(null);
     const [showBackup, setShowBackup] = useState(false);
     const [dupesNonce, setDupesNonce] = useState(0);
+    const [reconnecting, setReconnecting] = useState(false);
 
     const reload = useCallback(async () => {
         try {
@@ -207,8 +208,17 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     break;
             }
         };
+        es.onopen = () => {
+            setReconnecting(false);
+            // The stream may have dropped mid-sync; refresh local state so the
+            // UI doesn't sit on a stale "syncing" forever.
+            void reload();
+            void loadStorage();
+            void loadSyncStatus();
+        };
+        es.onerror = () => setReconnecting(true);
         return () => es.close();
-    }, [loadStorage]);
+    }, [reload, loadStorage, loadSyncStatus]);
 
     async function onAdd(localDir: string, driveFolderName: string, settings: PairSettings) {
         setError(null);
@@ -360,6 +370,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                         </div>
 
                         {error && <div className="alert">{error}</div>}
+
+                        {reconnecting && <div className="alert">Connection lost — reconnecting…</div>}
 
                         {deletionHold && (
                             <DeletionHoldCard

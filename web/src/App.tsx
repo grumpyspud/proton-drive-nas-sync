@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { appLogout, getAppAuthStatus, getAuthStatus, type AppAuthStatus } from './api';
+import { appLogout, getAppAuthStatus, getAuthStatus, NetworkError, type AppAuthStatus } from './api';
 import { Dashboard } from './components/Dashboard';
 import { LoginView } from './components/LoginView';
 import { AppLoginView } from './components/AppLoginView';
@@ -19,6 +19,7 @@ export function App() {
     const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') === 'light' ? 'light' : 'dark'));
     const [showSetPassword, setShowSetPassword] = useState(false);
     const [showRestore, setShowRestore] = useState(false);
+    const [connectionError, setConnectionError] = useState(false);
 
     useEffect(() => {
         document.documentElement.dataset.theme = theme;
@@ -33,8 +34,19 @@ export function App() {
 
     const refreshProtonAuth = useCallback(() => {
         getAuthStatus()
-            .then((s) => setAuth({ authenticated: s.authenticated, uid: s.uid }))
-            .catch(() => setAuth({ authenticated: false }));
+            .then((s) => {
+                setConnectionError(false);
+                setAuth({ authenticated: s.authenticated, uid: s.uid });
+            })
+            .catch((err) => {
+                // A network failure is not a logout — don't drop the user to the
+                // login screen just because the server was briefly unreachable.
+                if (err instanceof NetworkError) {
+                    setConnectionError(true);
+                } else {
+                    setAuth({ authenticated: false });
+                }
+            });
     }, []);
 
     useEffect(() => {
@@ -45,7 +57,15 @@ export function App() {
     const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
     let view: ReactNode;
-    if (appAuth === null || auth === null) {
+    if (connectionError) {
+        view = (
+            <div className="splash">
+                <p>Can't reach the server.</p>
+                <p className="muted">Check your connection (e.g. Tailscale) and retry.</p>
+                <button className="btn" onClick={() => { setConnectionError(false); refreshAppAuth(); refreshProtonAuth(); }}>Retry</button>
+            </div>
+        );
+    } else if (appAuth === null || auth === null) {
         view = <div className="splash">Loading…</div>;
     } else if (appAuth.enabled && !appAuth.authenticated) {
         // Layer 1: app password set but not unlocked.

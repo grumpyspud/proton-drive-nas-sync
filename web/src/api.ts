@@ -14,11 +14,23 @@ function getDeviceId(): string {
     }
 }
 
+export class NetworkError extends Error {
+    constructor() {
+        super("Can't reach the server. Check your connection and try again.");
+        this.name = 'NetworkError';
+    }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(path, {
-        headers: { 'Content-Type': 'application/json', 'X-PDN-Device-Id': getDeviceId() },
-        ...init,
-    });
+    let res: Response;
+    try {
+        res = await fetch(path, {
+            headers: { 'Content-Type': 'application/json', 'X-PDN-Device-Id': getDeviceId() },
+            ...init,
+        });
+    } catch {
+        throw new NetworkError();
+    }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
         throw new Error((data as { error?: string }).error ?? `Request failed (${res.status})`);
