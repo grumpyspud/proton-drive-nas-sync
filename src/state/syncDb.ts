@@ -139,6 +139,10 @@ export class SyncDB {
                 rel_path TEXT NOT NULL,
                 PRIMARY KEY (pair_id, rel_path)
             );
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
         `);
         this.migrate();
     }
@@ -291,6 +295,16 @@ export class SyncDB {
         out.sort((a, b) => b.size - a.size || a.sha1.localeCompare(b.sha1));
         for (const g of out) g.files.sort((a, b) => a.relPath.localeCompare(b.relPath));
         return out;
+    }
+
+    /** Read a global setting by key (string-valued), or null when unset. */
+    getSetting(key: string): string | null {
+        const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as unknown as { value: string } | undefined;
+        return row?.value ?? null;
+    }
+
+    setSetting(key: string, value: string): void {
+        this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
     }
 
     close(): void {

@@ -153,6 +153,18 @@ export function getStorage(): Promise<StorageInfo> {
     return request<StorageInfo>('/api/storage');
 }
 
+export interface SyncSettings {
+    transferConcurrency: number;
+}
+
+export function getSettings(): Promise<SyncSettings> {
+    return request<SyncSettings>('/api/settings');
+}
+
+export function updateSettings(settings: { transferConcurrency: number }): Promise<SyncSettings> {
+    return request<SyncSettings>('/api/settings', { method: 'PUT', body: JSON.stringify(settings) });
+}
+
 export function listLocalDir(path: string): Promise<DirListing> {
     return request<DirListing>(`/api/fs/list?path=${encodeURIComponent(path)}`);
 }

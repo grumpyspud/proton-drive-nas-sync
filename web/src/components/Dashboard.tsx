@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { addPair, cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, type PairSettings } from '../api';
+import { addPair, cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getSettings, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
 import type { DeletionHold, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
@@ -61,6 +61,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [showBackup, setShowBackup] = useState(false);
     const [dupesNonce, setDupesNonce] = useState(0);
     const [reconnecting, setReconnecting] = useState(false);
+    const [transferConcurrency, setTransferConcurrency] = useState(3);
 
     const reload = useCallback(async () => {
         try {
@@ -86,11 +87,20 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         }
     }, []);
 
+    const loadSettings = useCallback(async () => {
+        try {
+            setTransferConcurrency((await getSettings()).transferConcurrency);
+        } catch {
+            /* non-critical */
+        }
+    }, []);
+
     useEffect(() => {
         void reload();
         void loadStorage();
         void loadSyncStatus();
-    }, [reload, loadStorage, loadSyncStatus]);
+        void loadSettings();
+    }, [reload, loadStorage, loadSyncStatus, loadSettings]);
 
     useEffect(() => {
         const es = new EventSource('/api/events');
@@ -301,6 +311,16 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         onLogout();
     }
 
+    async function onTransferConcurrencyChange(value: number) {
+        setError(null);
+        try {
+            const res = await updateSettings({ transferConcurrency: value });
+            setTransferConcurrency(res.transferConcurrency);
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
     return (
         <div className="app">
             <header className="topbar">
@@ -443,6 +463,22 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
 
                 <section className="col col-side">
                     {storage && <StorageCard storage={storage} />}
+                    <div className="card">
+                        <h2>Sync settings</h2>
+                        <div className="field">
+                            <span>Max concurrent transfers</span>
+                            <select className="select" value={transferConcurrency} onChange={(e) => onTransferConcurrencyChange(Number(e.target.value))}>
+                                <option value={1}>1 — sequential</option>
+                                <option value={2}>2</option>
+                                <option value={3}>3 — default</option>
+                                <option value={4}>4</option>
+                            </select>
+                        </div>
+                        <p className="muted">
+                            Applies to every folder pair. Higher is faster for big bulk syncs but uses more
+                            bandwidth; capped at 4 to avoid Proton rate-limiting. Takes effect on the next sync.
+                        </p>
+                    </div>
                     <div className="card">
                         <h2>Folder pairs</h2>
                         <AddPairForm onAdd={onAdd} />

@@ -62,6 +62,11 @@ export const DEFAULT_PROGRESS_MIN_BYTES = 5 * 1024 * 1024;
  *  run ~3–5 concurrent transfers. */
 export const DEFAULT_TRANSFER_CONCURRENCY = 3;
 
+/** Hard upper bound on transfer concurrency (global setting + env). Going above 4
+ *  risks Proton rate-limiting, so this is a deliberate ceiling enforced by both the
+ *  server setting clamp and this engine clamp. */
+export const MAX_TRANSFER_CONCURRENCY = 4;
+
 interface DriveDeletion {
     relPath: string;
     uid: string;
@@ -503,7 +508,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     // I/O-bound throughput. On abort we stop pulling new files, let in-flight
     // transfers finish, then throw — so no worker touches the DB after syncOnce
     // returns and the caller can close it safely.
-    const transferConcurrency = Math.max(1, Math.floor(options.transferConcurrency ?? DEFAULT_TRANSFER_CONCURRENCY));
+    const transferConcurrency = Math.min(MAX_TRANSFER_CONCURRENCY, Math.max(1, Math.floor(options.transferConcurrency ?? DEFAULT_TRANSFER_CONCURRENCY)));
     {
         const queue = [...fileRelPaths];
         let abortError: Error | null = null;

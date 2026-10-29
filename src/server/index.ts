@@ -9,7 +9,7 @@ import { findFolder, findOrCreateFolderPath } from '../fs/folders';
 import { nodeName } from '../fs/files';
 import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
 import { NodeType } from '@protontech/drive-sdk';
-import { syncOnce, SyncAbortedError } from '../engine/sync';
+import { syncOnce, SyncAbortedError, DEFAULT_TRANSFER_CONCURRENCY, MAX_TRANSFER_CONCURRENCY } from '../engine/sync';
 import { DeletionTripwireError } from '../engine/safety';
 import { recycleDuplicates, scanDuplicates } from '../engine/duplicates';
 import type { ProgressHandler, SyncProgressEvent } from '../engine/progress';
@@ -80,14 +80,26 @@ const PROGRESS_MIN_BYTES = (() => {
     return Number.isFinite(n) && n >= 0 ? n : undefined;
 })();
 
-// Concurrent file transfers per sync cycle (2–4 roughly multiplies I/O-bound
-// throughput). Overridable via PDN_TRANSFER_CONCURRENCY; unset uses the engine default.
-const TRANSFER_CONCURRENCY = (() => {
-    const raw = process.env.PDN_TRANSFER_CONCURRENCY;
-    if (!raw) return undefined;
-    const n = Number(raw);
-    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : undefined;
-})();
+// Concurrent file transfers per sync cycle. Adjustable globally in the UI (persisted
+// in the state DB settings table), seeded by PDN_TRANSFER_CONCURRENCY, defaulting to
+// DEFAULT_TRANSFER_CONCURRENCY (3). Hard-capped at MAX_TRANSFER_CONCURRENCY (4) to stay
+// clear of Proton rate-limiting.
+const TRANSFER_CONCURRENCY_SETTING = 'transferConcurrency';
+
+function clampTransferConcurrency(value: unknown): number | undefined {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(n)) return undefined;
+    return Math.min(MAX_TRANSFER_CONCURRENCY, Math.max(1, Math.floor(n)));
+}
+
+const ENV_TRANSFER_CONCURRENCY = clampTransferConcurrency(process.env.PDN_TRANSFER_CONCURRENCY);
+
+/** DB setting wins; then the env seed; then undefined (engine default 3). */
+function getTransferConcurrency(db: SyncDB): number | undefined {
+    const stored = db.getSetting(TRANSFER_CONCURRENCY_SETTING);
+    if (stored !== null) return clampTransferConcurrency(stored) ?? ENV_TRANSFER_CONCURRENCY;
+    return ENV_TRANSFER_CONCURRENCY;
+}
 
 const DEDUPE_MIN_BYTES_MIN = 1024;
 const DEDUPE_MIN_BYTES_MAX = 10 * 1024 * 1024;
@@ -140,7 +152,7 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
             onProgress,
             shouldAbort: () => paused || stopRequested,
             progressMinBytes: PROGRESS_MIN_BYTES,
-            transferConcurrency: TRANSFER_CONCURRENCY,
+            transferConcurrency: getTransferConcurrency(db),
             allowDeletions,
         });
         db.markSynced(pairId);
@@ -440,6 +452,31 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
     }
     next();
 }
+
+app.get('/api/settings', requireAuth, (_req, res) => {
+    const db = new SyncDB(syncDbPath());
+    try {
+        res.json({ transferConcurrency: getTransferConcurrency(db) ?? DEFAULT_TRANSFER_CONCURRENCY });
+    } finally {
+        db.close();
+    }
+});
+
+app.put('/api/settings', requireAuth, (req, res) => {
+    const raw = (req.body ?? {}).transferConcurrency;
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > MAX_TRANSFER_CONCURRENCY) {
+        res.status(400).json({ error: `transferConcurrency must be an integer between 1 and ${MAX_TRANSFER_CONCURRENCY}` });
+        return;
+    }
+    const db = new SyncDB(syncDbPath());
+    try {
+        db.setSetting(TRANSFER_CONCURRENCY_SETTING, String(n));
+    } finally {
+        db.close();
+    }
+    res.json({ transferConcurrency: n });
+});
 
 app.get('/api/pairs', requireAuth, (_req, res) => {
     const db = new SyncDB(syncDbPath());
