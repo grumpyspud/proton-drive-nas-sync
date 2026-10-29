@@ -2,6 +2,7 @@ import { Worker } from 'node:worker_threads';
 import { CryptoProxy } from '@protontech/crypto';
 import { Api as CryptoApi } from '@protontech/crypto/proxy/endpoint/api.ts';
 import { OpenPGPCryptoWithCryptoProxy } from '@protontech/drive-sdk';
+import { logger } from '../logger';
 import { nodeEndpoint } from './comlinkNode';
 import { createNodeWorkerPool } from './cryptoWorkerPool';
 
@@ -41,10 +42,12 @@ export async function initOpenPGPCryptoModule(): Promise<OpenPGPCryptoWithCrypto
         );
         CryptoProxy.setEndpoint(pool, (endpoint) => endpoint.clearKeyStore());
         await pool.init({ poolSize: workers });
+        logger.info(`Crypto endpoint: worker pool of ${workers} threads`);
         return new OpenPGPCryptoWithCryptoProxy(CryptoProxy);
     }
 
     CryptoApi.init({});
     CryptoProxy.setEndpoint(new CryptoApi(), (endpoint) => endpoint.clearKeyStore());
+    logger.info('Crypto endpoint: inline (single-threaded)');
     return new OpenPGPCryptoWithCryptoProxy(CryptoProxy);
 }
