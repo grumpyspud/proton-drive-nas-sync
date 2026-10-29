@@ -37,6 +37,7 @@ export type SyncAction =
 
 export type SyncProgressEvent =
     | { type: 'sync-start'; pairId: string; localDir: string; driveFolderName: string }
+    | { type: 'walk'; side: 'local' | 'drive'; files: number; folders: number }
     | { type: 'sync-plan'; totalBytes: number; totalFiles: number }
     | { type: 'transfer'; relPath: string; direction: TransferDirection; bytes: number; total: number; percent: number; speedBps: number }
     | { type: 'overall'; transferredBytes: number; totalBytes: number; percent: number; speedBps: number; filesDone: number; totalFiles: number }

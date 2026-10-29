@@ -48,6 +48,26 @@ export interface WalkLocalOptions {
     excludePrefix?: string;
     /** Invoked for each leftover `*.pdn-part` file (already excluded from results). */
     onPartial?: (relPath: string, absPath: string) => void | Promise<void>;
+    /** Throttled live counter while the tree is being scanned (for progress UIs). */
+    onProgress?: (stats: WalkProgress) => void;
+}
+
+/** Live scan stats emitted during a walk. */
+export interface WalkProgress {
+    files: number;
+    folders: number;
+}
+
+/** Time-throttled emitter so a fast walk doesn't flood the event stream. */
+function throttledProgress(onProgress: ((stats: WalkProgress) => void) | undefined, intervalMs = 500) {
+    let last = 0;
+    return (files: number, folders: number, force = false): void => {
+        const now = Date.now();
+        if (force || now - last >= intervalMs) {
+            last = now;
+            onProgress?.({ files, folders });
+        }
+    };
 }
 
 /**
@@ -56,8 +76,11 @@ export interface WalkLocalOptions {
  * reserved namespace, e.g. `.pdn-trash`) are skipped. Symlinks are skipped.
  */
 export async function walkLocalTree(root: string, options: WalkLocalOptions = {}): Promise<LocalEntry[]> {
-    const { excludePrefix = '.pdn-', onPartial } = options;
+    const { excludePrefix = '.pdn-', onPartial, onProgress } = options;
     const entries: LocalEntry[] = [];
+    let files = 0;
+    let folders = 0;
+    const emit = throttledProgress(onProgress);
     async function walk(dir: string, rel: string): Promise<void> {
         const dirents = await readdir(dir, { withFileTypes: true });
         for (const d of dirents) {
@@ -66,7 +89,9 @@ export async function walkLocalTree(root: string, options: WalkLocalOptions = {}
             const relPath = rel === '' ? d.name : `${rel}/${d.name}`;
             if (d.isDirectory()) {
                 const st = await stat(abs);
+                folders++;
                 entries.push({ relPath, absPath: abs, kind: 'folder', size: st.size, mtimeMs: st.mtimeMs });
+                emit(files, folders);
                 await walk(abs, relPath);
             } else if (d.isFile()) {
                 if (d.name.endsWith('.pdn-part')) {
@@ -74,17 +99,22 @@ export async function walkLocalTree(root: string, options: WalkLocalOptions = {}
                     continue;
                 }
                 const st = await stat(abs);
+                files++;
                 entries.push({ relPath, absPath: abs, kind: 'file', size: st.size, mtimeMs: st.mtimeMs });
+                emit(files, folders);
             }
         }
     }
     await walk(root, '');
+    emit(files, folders, true);
     return entries;
 }
 
 export interface WalkDriveOptions {
     /** Invoked for each `*.pdn-part` file (already excluded from results). */
     onPartial?: (relPath: string, uid: string) => void | Promise<void>;
+    /** Throttled live counter while the tree is being scanned (for progress UIs). */
+    onProgress?: (stats: WalkProgress) => void;
 }
 
 /** Max concurrent Drive `iterateFolderChildren` calls during a walk. */
@@ -125,8 +155,11 @@ async function listFolderChildren(sdk: ProtonDriveClient, uid: string): Promise<
  * ORDER is not meaningful to callers (they map by relPath), so parallelism is safe.
  */
 export async function walkDriveTree(sdk: ProtonDriveClient, folderUid: string, rel = '', options: WalkDriveOptions = {}): Promise<DriveEntry[]> {
-    const { onPartial } = options;
+    const { onPartial, onProgress } = options;
     const entries: DriveEntry[] = [];
+    let files = 0;
+    let folders = 0;
+    const emit = throttledProgress(onProgress);
 
     // Counting semaphore capping concurrent listing calls across the whole walk.
     let active = 0;
@@ -158,7 +191,13 @@ export async function walkDriveTree(sdk: ProtonDriveClient, folderUid: string, r
                     continue;
                 }
                 entries.push({ relPath: childRel, uid: child.uid, kind, fingerprint: kind === 'file' ? driveFingerprint(child) : '', node: child });
-                if (kind === 'folder') subfolders.push({ uid: child.uid, rel: childRel });
+                if (kind === 'folder') {
+                    folders++;
+                    subfolders.push({ uid: child.uid, rel: childRel });
+                } else {
+                    files++;
+                }
+                emit(files, folders);
             }
         } finally {
             release();
@@ -167,5 +206,6 @@ export async function walkDriveTree(sdk: ProtonDriveClient, folderUid: string, r
     }
 
     await walk(folderUid, rel);
+    emit(files, folders, true);
     return entries;
 }

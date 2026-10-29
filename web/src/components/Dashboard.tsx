@@ -56,6 +56,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [paused, setPaused] = useState(false);
     const [showLogs, setShowLogs] = useState(false);
     const [overall, setOverall] = useState<OverallState | null>(null);
+    const [scanState, setScanState] = useState<{ side: 'local' | 'drive'; files: number; folders: number } | null>(null);
     const [deletionHold, setDeletionHold] = useState<DeletionHold | null>(null);
     const [showBackup, setShowBackup] = useState(false);
     const [dupesNonce, setDupesNonce] = useState(0);
@@ -110,6 +111,10 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     setActive(new Map());
                     setOverall(null);
                     setDeletionHold(null);
+                    setScanState(null);
+                    break;
+                case 'walk':
+                    setScanState({ side: ev.side, files: ev.files, folders: ev.folders });
                     break;
                 case 'sync-plan':
                     setOverall({ transferredBytes: 0, totalBytes: ev.totalBytes, percent: 0, speedBps: 0, filesDone: 0, totalFiles: ev.totalFiles });
@@ -386,7 +391,16 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                         {[...active.values()].map((t) => (
                             <ProgressBar key={t.relPath} {...t} />
                         ))}
-                        {syncing && overall == null && active.size === 0 && <div className="muted">Scanning for changes…</div>}
+                        {syncing && overall == null && active.size === 0 && (
+                            scanState ? (
+                                <div className="muted">
+                                    Scanning {scanState.side === 'local' ? 'local folder' : 'Proton Drive'} —{' '}
+                                    {scanState.files.toLocaleString()} files · {scanState.folders.toLocaleString()} folders
+                                </div>
+                            ) : (
+                                <div className="muted">Scanning for changes…</div>
+                            )
+                        )}
 
                         {summary && !syncing && (
                             <div className="summary">

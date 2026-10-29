@@ -102,11 +102,13 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         onPartial: (relPath, absPath) => {
             localPartials.push({ relPath, absPath });
         },
+        onProgress: (stats) => onProgress?.({ type: 'walk', side: 'local', ...stats }),
     });
     const drive = await walkDriveTree(sdk, driveFolderUid, '', {
         onPartial: (relPath, uid) => {
             drivePartials.push({ relPath, uid });
         },
+        onProgress: (stats) => onProgress?.({ type: 'walk', side: 'drive', ...stats }),
     });
     checkAbort();
 
