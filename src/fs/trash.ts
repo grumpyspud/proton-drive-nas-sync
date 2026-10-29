@@ -87,6 +87,32 @@ export async function clearTrash(localDir: string): Promise<void> {
     await rm(trashRoot(resolveLocalDir(localDir)), { recursive: true, force: true });
 }
 
+/**
+ * Recycle a batch of local files into a single timestamped `.pdn-trash`
+ * subfolder, preserving each file's relative path (restores keep structure).
+ * Missing files are skipped. Returns the number of files moved.
+ */
+export async function recycleFiles(localDir: string, relPaths: string[]): Promise<number> {
+    const localAbs = resolveLocalDir(localDir);
+    const root = trashRoot(localAbs);
+    const ts = Date.now();
+    const batchDir = join(root, String(ts));
+    await mkdir(batchDir, { recursive: true });
+    let moved = 0;
+    for (const relPath of relPaths) {
+        const segs = relPath.split('/').filter((s) => s.length > 0);
+        if (segs.length === 0 || segs.some((s) => s === '..' || s === '.')) continue;
+        const src = join(localAbs, ...segs);
+        if (!existsSync(src)) continue;
+        const dst = join(batchDir, ...segs);
+        await mkdir(dirname(dst), { recursive: true });
+        await rename(src, dst);
+        moved++;
+    }
+    if (moved === 0) await rm(batchDir, { recursive: true, force: true });
+    return moved;
+}
+
 /** Remove now-empty parent dirs (up to, but not including, `stopAt`). */
 async function removeEmptyParents(dir: string, stopAt: string): Promise<void> {
     const stop = resolve(stopAt);

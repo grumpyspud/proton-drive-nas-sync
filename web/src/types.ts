@@ -7,6 +7,8 @@ export interface Pair {
     autoSync: boolean;
     intervalSeconds: number;
     lastSyncAt: number | null;
+    dedupeEnabled: boolean;
+    dedupeMinBytes: number;
 }
 
 export interface SyncSummary {
@@ -39,7 +41,7 @@ export type SyncProgressEvent =
     | { type: 'transfer'; relPath: string; direction: TransferDirection; bytes: number; total: number; percent: number; speedBps: number }
     | { type: 'overall'; transferredBytes: number; totalBytes: number; percent: number; speedBps: number; filesDone: number; totalFiles: number }
     | { type: 'item'; action: SyncAction; relPath: string }
-    | { type: 'sync-complete'; summary: SyncSummary }
+    | { type: 'sync-complete'; pairId: string; summary: SyncSummary }
     | { type: 'sync-error'; message: string }
     | { type: 'sync-paused' }
     | { type: 'sync-resumed' }
@@ -102,4 +104,16 @@ export interface TrashItem {
     relPath: string;
     size: number;
     mtimeMs: number;
+}
+
+export interface DuplicateFile {
+    relPath: string;
+    size: number;
+    mtimeMs: number;
+}
+
+export interface DuplicateGroup {
+    sha1: string;
+    size: number;
+    files: DuplicateFile[];
 }

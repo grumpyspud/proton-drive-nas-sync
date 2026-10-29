@@ -1,4 +1,4 @@
-import type { DirListing, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
+import type { DirListing, DuplicateGroup, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
 
 function getDeviceId(): string {
     try {
@@ -87,6 +87,8 @@ export interface PairSettings {
     realTime?: boolean;
     autoSync?: boolean;
     intervalSeconds?: number;
+    dedupeEnabled?: boolean;
+    dedupeMinBytes?: number;
 }
 
 export function addPair(localDir: string, driveFolderName: string, settings: PairSettings = {}): Promise<{ pair: Pair }> {
@@ -165,6 +167,18 @@ export function deleteTrashItem(id: string, ts: number, relPath: string): Promis
 
 export function clearTrash(id: string): Promise<{ ok: boolean }> {
     return request(`/api/pairs/${encodeURIComponent(id)}/trash/clear`, { method: 'POST' });
+}
+
+export function getDuplicates(id: string): Promise<{ groups: DuplicateGroup[] }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/duplicates`);
+}
+
+export function ignoreDuplicates(id: string, relPaths: string[]): Promise<{ ok: boolean; ignored: number }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/duplicates/ignore`, { method: 'POST', body: JSON.stringify({ relPaths }) });
+}
+
+export function recycleDuplicates(id: string, relPaths: string[]): Promise<{ ok: boolean; recycled: number }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/duplicates/recycle`, { method: 'POST', body: JSON.stringify({ relPaths }) });
 }
 
 export interface ClientFingerprint {

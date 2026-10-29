@@ -6,6 +6,7 @@ import { ProgressBar } from './ProgressBar';
 import { FolderBrowser } from './FolderBrowser';
 import { LogsModal } from './LogsModal';
 import { BackupModal } from './BackupModal';
+import { DuplicatesPanel } from './DuplicatesPanel';
 
 const MAX_LOG = 200;
 
@@ -16,6 +17,15 @@ const AUTO_SYNC_INTERVALS: Array<{ label: string; value: number }> = [
     { label: '6 hours', value: 21600 },
     { label: '12 hours', value: 43200 },
     { label: '24 hours', value: 86400 },
+];
+
+const DEDUPE_MIN_OPTIONS: Array<{ label: string; value: number }> = [
+    { label: 'No min size', value: 0 },
+    { label: '1 KB', value: 1024 },
+    { label: '10 KB', value: 10240 },
+    { label: '100 KB', value: 102400 },
+    { label: '1 MB', value: 1048576 },
+    { label: '10 MB', value: 10485760 },
 ];
 
 function intervalLabel(seconds: number): string {
@@ -48,6 +58,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [overall, setOverall] = useState<OverallState | null>(null);
     const [deletionHold, setDeletionHold] = useState<DeletionHold | null>(null);
     const [showBackup, setShowBackup] = useState(false);
+    const [dupesNonce, setDupesNonce] = useState(0);
 
     const reload = useCallback(async () => {
         try {
@@ -153,6 +164,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     setSummary(ev.summary);
                     setActive(new Map());
                     setOverall(null);
+                    setDupesNonce((n) => n + 1);
                     void loadStorage();
                     break;
                 case 'sync-error':
@@ -400,6 +412,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                             </details>
                         )}
                     </div>
+                    <DuplicatesPanel nonce={dupesNonce} pairs={pairs} />
                 </section>
 
                 <section className="col col-side">
@@ -449,6 +462,16 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                                 {AUTO_SYNC_INTERVALS.map((i) => (
                                                     <option key={i.value} value={i.value}>
                                                         {i.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        )}
+                                        <Toggle label="Dedupe" checked={p.dedupeEnabled} onChange={(v) => onUpdatePair(p.id, { dedupeEnabled: v })} />
+                                        {p.dedupeEnabled && (
+                                            <select className="select" value={p.dedupeMinBytes} onChange={(e) => onUpdatePair(p.id, { dedupeMinBytes: Number(e.target.value) })}>
+                                                {DEDUPE_MIN_OPTIONS.map((o) => (
+                                                    <option key={o.value} value={o.value}>
+                                                        {o.label}
                                                     </option>
                                                 ))}
                                             </select>

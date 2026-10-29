@@ -11,6 +11,7 @@ import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/
 import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce, SyncAbortedError } from '../engine/sync';
 import { DeletionTripwireError } from '../engine/safety';
+import { recycleDuplicates, scanDuplicates } from '../engine/duplicates';
 import type { ProgressHandler, SyncProgressEvent } from '../engine/progress';
 import { logger } from '../logger';
 import { SyncDB, type Pair } from '../state/syncDb';
@@ -37,6 +38,8 @@ interface PairBody {
     realTime?: boolean;
     autoSync?: boolean;
     intervalSeconds?: number;
+    dedupeEnabled?: boolean;
+    dedupeMinBytes?: number;
 }
 
 function pairIdFor(localDir: string, driveFolderName: string): string {
@@ -74,6 +77,15 @@ const PROGRESS_MIN_BYTES = (() => {
     const n = Number(raw);
     return Number.isFinite(n) && n >= 0 ? n : undefined;
 })();
+
+const DEDUPE_MIN_BYTES_MIN = 1024;
+const DEDUPE_MIN_BYTES_MAX = 10 * 1024 * 1024;
+
+/** Clamp a user-supplied min-size for the duplicate scan: 0 = none, else 1 KB..10 MB. */
+function clampDedupeMinBytes(value: unknown): number {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 0;
+    return Math.min(DEDUPE_MIN_BYTES_MAX, Math.max(DEDUPE_MIN_BYTES_MIN, Math.round(value)));
+}
 
 let syncing = false;
 let paused = false;
@@ -120,7 +132,7 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
             allowDeletions,
         });
         db.markSynced(pairId);
-        broadcast({ type: 'sync-complete', summary });
+        broadcast({ type: 'sync-complete', pairId, summary });
         return true;
     } catch (error) {
         if (error instanceof SyncAbortedError) {
@@ -427,7 +439,7 @@ app.get('/api/pairs', requireAuth, (_req, res) => {
 });
 
 app.post('/api/pairs', requireAuth, async (req, res) => {
-    const { localDir, driveFolderName, realTime, autoSync, intervalSeconds } = (req.body ?? {}) as PairBody;
+    const { localDir, driveFolderName, realTime, autoSync, intervalSeconds, dedupeEnabled, dedupeMinBytes } = (req.body ?? {}) as PairBody;
     if (!localDir) {
         res.status(400).json({ error: 'localDir is required' });
         return;
@@ -447,6 +459,8 @@ app.post('/api/pairs', requireAuth, async (req, res) => {
             autoSync: !!autoSync,
             intervalSeconds: typeof intervalSeconds === 'number' ? intervalSeconds : 0,
             lastSyncAt: null,
+            dedupeEnabled: !!dedupeEnabled,
+            dedupeMinBytes: clampDedupeMinBytes(dedupeMinBytes),
         };
         db.upsertPair(pair);
         res.json({ pair });
@@ -469,6 +483,8 @@ app.patch('/api/pairs/:id', requireAuth, (req, res) => {
             realTime: typeof body.realTime === 'boolean' ? body.realTime : pair.realTime,
             autoSync: typeof body.autoSync === 'boolean' ? body.autoSync : pair.autoSync,
             intervalSeconds: typeof body.intervalSeconds === 'number' ? body.intervalSeconds : pair.intervalSeconds,
+            dedupeEnabled: typeof body.dedupeEnabled === 'boolean' ? body.dedupeEnabled : pair.dedupeEnabled,
+            dedupeMinBytes: body.dedupeMinBytes !== undefined ? clampDedupeMinBytes(body.dedupeMinBytes) : pair.dedupeMinBytes,
         };
         if (updated.autoSync && updated.intervalSeconds <= 0) updated.intervalSeconds = 3600;
         db.upsertPair(updated);
@@ -559,6 +575,66 @@ app.post('/api/pairs/:id/trash/clear', requireAuth, async (req, res) => {
         res.json({ ok: true });
     } catch (err) {
         res.status(400).json({ error: (err as Error).message });
+    }
+});
+
+app.get('/api/pairs/:id/duplicates', requireAuth, (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    const db = new SyncDB(syncDbPath());
+    try {
+        res.json({ groups: scanDuplicates(db, pair.id, pair.localDir, pair.dedupeMinBytes || 0) });
+    } finally {
+        db.close();
+    }
+});
+
+app.post('/api/pairs/:id/duplicates/ignore', requireAuth, (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    const { relPaths } = (req.body ?? {}) as { relPaths?: string[] };
+    if (!Array.isArray(relPaths) || relPaths.length === 0) {
+        res.status(400).json({ error: 'relPaths must be a non-empty array' });
+        return;
+    }
+    const db = new SyncDB(syncDbPath());
+    try {
+        db.ignorePaths(pair.id, relPaths);
+        res.json({ ok: true, ignored: relPaths.length });
+    } finally {
+        db.close();
+    }
+});
+
+app.post('/api/pairs/:id/duplicates/recycle', requireAuth, async (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    const { relPaths } = (req.body ?? {}) as { relPaths?: string[] };
+    if (!Array.isArray(relPaths) || relPaths.length === 0) {
+        res.status(400).json({ error: 'relPaths must be a non-empty array' });
+        return;
+    }
+    if (syncing) {
+        res.status(409).json({ error: 'A sync is in progress — wait for it to finish' });
+        return;
+    }
+    const db = new SyncDB(syncDbPath());
+    try {
+        const recycled = await recycleDuplicates(db, pair.id, pair.localDir, relPaths);
+        res.json({ ok: true, recycled });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    } finally {
+        db.close();
     }
 });
 

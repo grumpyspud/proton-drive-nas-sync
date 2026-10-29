@@ -45,7 +45,7 @@ async function runSync(args: string[], watch: boolean) {
 
     const db = new SyncDB(syncDbPath());
     const id = pairId(localDir, driveFolderName);
-    db.upsertPair({ id, localDir, driveFolderName, driveFolderUid, realTime: false, autoSync: false, intervalSeconds: 0, lastSyncAt: null });
+    db.upsertPair({ id, localDir, driveFolderName, driveFolderUid, realTime: false, autoSync: false, intervalSeconds: 0, lastSyncAt: null, dedupeEnabled: false, dedupeMinBytes: 0 });
 
     const run = async () => {
         const result = await syncOnce({ sdk, pairId: id, localDir, driveFolderUid, db, log: (m) => logger.info(m) });

@@ -48,7 +48,7 @@ export type SyncProgressEvent =
           totalFiles: number;
       }
     | { type: 'item'; action: SyncAction; relPath: string }
-    | { type: 'sync-complete'; summary: SyncSummary }
+    | { type: 'sync-complete'; pairId: string; summary: SyncSummary }
     | { type: 'sync-error'; message: string }
     | { type: 'sync-paused' }
     | { type: 'sync-resumed' }

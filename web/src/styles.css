@@ -1272,3 +1272,106 @@ select.select:focus {
     gap: 6px;
     flex-shrink: 0;
 }
+
+/* ---------- Duplicates panel ---------- */
+.dupe-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.dupe-hint {
+    font-size: 12px;
+    color: var(--ink-400);
+    margin: 0 0 12px;
+}
+
+.dupe-pair {
+    margin-bottom: 16px;
+}
+
+.dupe-pair-name {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-400);
+    margin-bottom: 8px;
+}
+
+.dupe-group {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    margin-bottom: 10px;
+    background: var(--bg);
+}
+
+.dupe-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.dupe-count {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--warning);
+}
+
+.dupe-size {
+    font-size: 12px;
+    color: var(--ink-400);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.dupe-files {
+    list-style: none;
+    margin: 0 0 10px;
+    padding: 0;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.dupe-file {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--surface);
+}
+
+.dupe-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--ink-400);
+    flex-shrink: 0;
+    cursor: pointer;
+    user-select: none;
+}
+
+.dupe-check input {
+    width: auto;
+    margin: 0;
+}
+
+.dupe-path {
+    font-size: 12px;
+    color: var(--ink-600);
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.dupe-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
