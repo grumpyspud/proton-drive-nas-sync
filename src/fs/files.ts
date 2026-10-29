@@ -70,14 +70,15 @@ export async function uploadFile(
     name: string,
     localPath: string,
     onProgress?: TransferProgress,
+    expectedSha1?: string,
 ): Promise<string> {
     const stats = await stat(localPath);
-    const expectedSha1 = await sha1OfFile(localPath);
+    const sha1 = expectedSha1 ?? (await sha1OfFile(localPath));
 
     const uploader = await sdk.getFileUploader(parentFolderUid, name, {
         mediaType: mimeTypeFor(name),
         expectedSize: stats.size,
-        expectedSha1,
+        expectedSha1: sha1,
         modificationTime: stats.mtime,
     });
 
@@ -94,14 +95,15 @@ export async function uploadFileRevision(
     nodeUid: string,
     localPath: string,
     onProgress?: TransferProgress,
+    expectedSha1?: string,
 ): Promise<string> {
     const stats = await stat(localPath);
-    const expectedSha1 = await sha1OfFile(localPath);
+    const sha1 = expectedSha1 ?? (await sha1OfFile(localPath));
 
     const uploader = await sdk.getFileRevisionUploader(nodeUid, {
         mediaType: mimeTypeFor(basename(localPath)),
         expectedSize: stats.size,
-        expectedSha1,
+        expectedSha1: sha1,
         modificationTime: stats.mtime,
     });
 

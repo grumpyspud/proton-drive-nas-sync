@@ -87,28 +87,85 @@ export interface WalkDriveOptions {
     onPartial?: (relPath: string, uid: string) => void | Promise<void>;
 }
 
-/** Recursively walks a Drive folder tree (files + folders). */
+/** Max concurrent Drive `iterateFolderChildren` calls during a walk. */
+const DRIVE_WALK_CONCURRENCY = 8;
+/** Transient listing errors (rate-limit, 5xx, network) are retried this many times. */
+const DRIVE_LIST_MAX_RETRIES = 3;
+/** Initial backoff (ms) for listing retries; doubles each attempt. */
+const DRIVE_LIST_BASE_DELAY_MS = 500;
+
+/** Rate-limit + server errors + transport failures are retryable; auth/validation (4xx) is not. */
+function isRetryable(err: unknown): boolean {
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    if (typeof status === 'number') return status === 429 || status >= 500;
+    return true; // no HTTP status => network/transport error (fetch failed, reset, timeout, ...)
+}
+
+/** Lists one folder's children, retrying transient errors with exponential backoff. */
+async function listFolderChildren(sdk: ProtonDriveClient, uid: string): Promise<NodeEntity[]> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= DRIVE_LIST_MAX_RETRIES; attempt++) {
+        try {
+            const children: NodeEntity[] = [];
+            for await (const child of sdk.iterateFolderChildren(uid)) children.push(child);
+            return children;
+        } catch (err) {
+            lastErr = err;
+            if (!isRetryable(err) || attempt === DRIVE_LIST_MAX_RETRIES) throw err;
+            await new Promise((r) => setTimeout(r, DRIVE_LIST_BASE_DELAY_MS * 2 ** attempt));
+        }
+    }
+    throw lastErr;
+}
+
+/**
+ * Recursively walks a Drive folder tree (files + folders). Folder listings are
+ * the dominant cost of a large sync (one network round-trip each), so they run
+ * with bounded concurrency and transient errors are retried with backoff. Walk
+ * ORDER is not meaningful to callers (they map by relPath), so parallelism is safe.
+ */
 export async function walkDriveTree(sdk: ProtonDriveClient, folderUid: string, rel = '', options: WalkDriveOptions = {}): Promise<DriveEntry[]> {
     const { onPartial } = options;
     const entries: DriveEntry[] = [];
-    for await (const child of sdk.iterateFolderChildren(folderUid)) {
-        const name = nodeName(child.name);
-        const relPath = rel === '' ? name : `${rel}/${name}`;
-        const kind = child.type === NodeType.Folder ? 'folder' : 'file';
-        if (name.endsWith('.pdn-part')) {
-            if (kind === 'file') await onPartial?.(relPath, child.uid);
-            continue;
+
+    // Counting semaphore capping concurrent listing calls across the whole walk.
+    let active = 0;
+    const waiters: Array<() => void> = [];
+    const acquire = async (): Promise<void> => {
+        if (active < DRIVE_WALK_CONCURRENCY) {
+            active++;
+            return;
         }
-        entries.push({
-            relPath,
-            uid: child.uid,
-            kind,
-            fingerprint: kind === 'file' ? driveFingerprint(child) : '',
-            node: child,
-        });
-        if (kind === 'folder') {
-            entries.push(...(await walkDriveTree(sdk, child.uid, relPath, options)));
+        await new Promise<void>((resolve) => waiters.push(resolve));
+        active++;
+    };
+    const release = (): void => {
+        active--;
+        const next = waiters.shift();
+        if (next) next();
+    };
+
+    async function walk(folderUidInner: string, relInner: string): Promise<void> {
+        const subfolders: Array<{ uid: string; rel: string }> = [];
+        await acquire();
+        try {
+            for (const child of await listFolderChildren(sdk, folderUidInner)) {
+                const name = nodeName(child.name);
+                const childRel = relInner === '' ? name : `${relInner}/${name}`;
+                const kind = child.type === NodeType.Folder ? 'folder' : 'file';
+                if (name.endsWith('.pdn-part')) {
+                    if (kind === 'file') await onPartial?.(childRel, child.uid);
+                    continue;
+                }
+                entries.push({ relPath: childRel, uid: child.uid, kind, fingerprint: kind === 'file' ? driveFingerprint(child) : '', node: child });
+                if (kind === 'folder') subfolders.push({ uid: child.uid, rel: childRel });
+            }
+        } finally {
+            release();
         }
+        await Promise.all(subfolders.map((f) => walk(f.uid, f.rel)));
     }
+
+    await walk(folderUid, rel);
     return entries;
 }

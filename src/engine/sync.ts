@@ -180,7 +180,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         await mkdir(path.dirname(conflictPath), { recursive: true });
         await downloadFile(sdk, D.uid, conflictPath, transferReporter(relPath, 'download'));
         completedBytes += driveSize(D.node);
-        const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'));
+        const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'), localSha1);
         completedBytes += L.size;
         completedFiles++;
         db.upsertNode({
@@ -346,7 +346,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             // -- new local file --
             if (inLocal && !inDrive && !inDb) {
                 if (!parentUid) throw new Error(`No parent for ${relPath}`);
-                const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'));
+                const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'), localSha1 ?? undefined);
                 completedBytes += L.size;
                 completedFiles++;
                 db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
@@ -387,7 +387,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 const driveChanged = S!.driveFingerprint != null && driveFp !== S!.driveFingerprint;
 
                 if (localChanged && !driveChanged) {
-                    const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'));
+                    const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'), localSha1 ?? undefined);
                     completedBytes += L.size;
                     completedFiles++;
                     db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
@@ -433,7 +433,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 const localChanged = S!.localSha1 != null && localSha1 !== S!.localSha1;
                 if (localChanged) {
                     if (!parentUid) throw new Error(`No parent for ${relPath}`);
-                    const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'));
+                    const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'), localSha1 ?? undefined);
                     completedBytes += L.size;
                     completedFiles++;
                     db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
