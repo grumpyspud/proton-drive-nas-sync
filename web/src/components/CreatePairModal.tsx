@@ -69,19 +69,19 @@ export function CreatePairModal({ onCreated, onClose }: Props) {
                             </span>
                             <span className="toggle-label">Auto-sync</span>
                         </label>
-                        <span className="schedule-hint">
-                            {autoSync ? 'Sync automatically on this schedule.' : 'Manual — sync only when you click Sync.'}
-                        </span>
+                        {autoSync && (
+                            <select className="select" value={intervalSeconds} onChange={(e) => setIntervalSeconds(Number(e.target.value))}>
+                                {SYNC_FREQUENCIES.map((f) => (
+                                    <option key={f.value} value={f.value}>
+                                        {f.label}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
                     </div>
-                    {autoSync && (
-                        <select className="select" value={intervalSeconds} onChange={(e) => setIntervalSeconds(Number(e.target.value))}>
-                            {SYNC_FREQUENCIES.map((f) => (
-                                <option key={f.value} value={f.value}>
-                                    {f.label}
-                                </option>
-                            ))}
-                        </select>
-                    )}
+                    <span className="schedule-hint">
+                        {autoSync ? 'Sync automatically on this schedule.' : 'Manual — sync only when you click Sync.'}
+                    </span>
                 </div>
 
                 {error && <div className="alert">{error}</div>}
