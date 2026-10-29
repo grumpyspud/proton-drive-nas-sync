@@ -75,14 +75,6 @@ export function DuplicatesPanel({ nonce, pairs }: Props) {
         setKeep((prev) => ({ ...prev, [k]: !prev[k] }));
     }
 
-    function dismissGroup(pairId: string, sha1: string) {
-        setData((prev) =>
-            prev
-                .map((pd) => (pd.pairId === pairId ? { ...pd, groups: pd.groups.filter((g) => g.sha1 !== sha1) } : pd))
-                .filter((pd) => pd.groups.length > 0),
-        );
-    }
-
     async function doIgnore(pd: PairDupes, g: DuplicateGroup) {
         setBusy(`${pd.pairId}\u0000${g.sha1}`);
         setError(null);
@@ -176,9 +168,6 @@ export function DuplicatesPanel({ nonce, pairs }: Props) {
                                     <div className="dupe-actions">
                                         <button className="btn btn-primary btn-sm" disabled={!canRecycle || !!busyHere} onClick={() => doRecycle(pd, g)}>
                                             Recycle {unselectedCount} unselected
-                                        </button>
-                                        <button className="btn btn-ghost btn-sm" disabled={!!busyHere} onClick={() => dismissGroup(pd.pairId, g.sha1)}>
-                                            Keep all
                                         </button>
                                         <button className="btn btn-ghost btn-sm" disabled={!!busyHere} onClick={() => doIgnore(pd, g)}>
                                             Ignore
