@@ -25,6 +25,9 @@ export interface SyncOptions {
     shouldAbort?: () => boolean;
     /** Per-file bars are only emitted for files this size or larger (bytes). */
     progressMinBytes?: number;
+    /** Max concurrent file transfers (up/downloads) during the reconcile phase.
+     *  Defaults to DEFAULT_TRANSFER_CONCURRENCY; 1 = sequential (prior behaviour). */
+    transferConcurrency?: number;
     /** When true, skip the deletion-rate tripwire (user already confirmed). */
     allowDeletions?: boolean;
 }
@@ -52,6 +55,12 @@ export class SyncAbortedError extends Error {
  *  floods of small files); the job-level bar still tracks them. Tunable at the
  *  server via PDN_PROGRESS_MIN_BYTES. */
 export const DEFAULT_PROGRESS_MIN_BYTES = 5 * 1024 * 1024;
+
+/** Max concurrent file transfers (up/downloads) during a sync cycle. Transfers
+ *  are I/O-bound (network + disk), so a handful of parallel transfers roughly
+ *  multiplies throughput without extra CPU. Matches Proton's own clients, which
+ *  run ~3–5 concurrent transfers. */
+export const DEFAULT_TRANSFER_CONCURRENCY = 3;
 
 interface DriveDeletion {
     relPath: string;
@@ -313,9 +322,14 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     }
     onProgress?.({ type: 'sync-plan', totalBytes, totalFiles });
 
-    for (const relPath of fileRelPaths) {
+    // Reconcile ONE file (three-way merge + transfer). Extracted from the former
+    // sequential loop so the transfer phase can run with bounded concurrency.
+    // `checkAbort` and the map lookups sit OUTSIDE the try so a pause/stop
+    // throws SyncAbortedError (not a skip-on-error); transfers/DB are inside and
+    // fail soft per-file.
+    async function reconcileFile(relPath: string): Promise<void> {
         checkAbort();
-        if (isUnderDeletedFolder(relPath)) continue; // covered by the folder deletion
+        if (isUnderDeletedFolder(relPath)) return; // covered by the folder deletion
 
         const L = localByRel.get(relPath);
         const D = driveByRel.get(relPath);
@@ -327,7 +341,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         try {
             if (!inLocal && !inDrive) {
                 if (inDb) db.removeNode(pairId, relPath);
-                continue;
+                return;
             }
 
             const parentRel = path.posix.dirname(relPath);
@@ -356,7 +370,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 result.uploaded++;
                 onProgress?.({ type: 'item', action: 'upload', relPath });
                 log(`uploaded ${relPath}`);
-                continue;
+                return;
             }
 
             // -- new Drive file --
@@ -366,7 +380,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 result.downloaded++;
                 onProgress?.({ type: 'item', action: 'download', relPath });
                 log(`downloaded ${relPath}`);
-                continue;
+                return;
             }
 
             // -- both new (first-sync collision) --
@@ -380,7 +394,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                     result.conflicts++;
                     onProgress?.({ type: 'item', action: 'conflict', relPath });
                 }
-                continue;
+                return;
             }
 
             // -- both present and previously synced --
@@ -427,7 +441,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                     result.skipped++;
                     onProgress?.({ type: 'item', action: 'skip', relPath });
                 }
-                continue;
+                return;
             }
 
             // -- local present, drive missing (drive deleted it) --
@@ -445,7 +459,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 } else {
                     localDeletions.push({ relPath });
                 }
-                continue;
+                return;
             }
 
             // -- drive present, local missing (local deleted it) --
@@ -460,7 +474,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 } else {
                     driveDeletions.push({ relPath, uid: D.uid });
                 }
-                continue;
+                return;
             }
         } catch (err) {
             // Skip-on-error: one bad file never aborts the whole sync.
@@ -471,6 +485,39 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             onProgress?.({ type: 'log', message: line });
             onProgress?.({ type: 'item', action: 'skip-error', relPath });
         }
+    }
+
+    // ---- Transfer phase: bounded-concurrency reconcile over the file set ----
+    // Files are independent (three-way merge per relPath; their parents are the
+    // folders created above), so 2–4 parallel transfers roughly multiply
+    // I/O-bound throughput. On abort we stop pulling new files, let in-flight
+    // transfers finish, then throw — so no worker touches the DB after syncOnce
+    // returns and the caller can close it safely.
+    const transferConcurrency = Math.max(1, Math.floor(options.transferConcurrency ?? DEFAULT_TRANSFER_CONCURRENCY));
+    {
+        const queue = [...fileRelPaths];
+        let abortError: Error | null = null;
+        const workers = Array.from({ length: Math.min(transferConcurrency, queue.length) }, async () => {
+            while (true) {
+                if (abortError || shouldAbort?.()) {
+                    abortError ??= new SyncAbortedError();
+                    return;
+                }
+                const relPath = queue.shift();
+                if (relPath === undefined) return;
+                try {
+                    await reconcileFile(relPath);
+                } catch (err) {
+                    if (err instanceof SyncAbortedError) {
+                        abortError = err;
+                        return;
+                    }
+                    throw err;
+                }
+            }
+        });
+        await Promise.all(workers);
+        if (abortError) throw abortError;
     }
 
     // ---- Deletion barrier: tripwire over ALL deletions, then execute (soft) ----

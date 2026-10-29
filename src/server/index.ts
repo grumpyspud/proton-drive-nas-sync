@@ -80,6 +80,15 @@ const PROGRESS_MIN_BYTES = (() => {
     return Number.isFinite(n) && n >= 0 ? n : undefined;
 })();
 
+// Concurrent file transfers per sync cycle (2–4 roughly multiplies I/O-bound
+// throughput). Overridable via PDN_TRANSFER_CONCURRENCY; unset uses the engine default.
+const TRANSFER_CONCURRENCY = (() => {
+    const raw = process.env.PDN_TRANSFER_CONCURRENCY;
+    if (!raw) return undefined;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : undefined;
+})();
+
 const DEDUPE_MIN_BYTES_MIN = 1024;
 const DEDUPE_MIN_BYTES_MAX = 10 * 1024 * 1024;
 
@@ -131,6 +140,7 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
             onProgress,
             shouldAbort: () => paused || stopRequested,
             progressMinBytes: PROGRESS_MIN_BYTES,
+            transferConcurrency: TRANSFER_CONCURRENCY,
             allowDeletions,
         });
         db.markSynced(pairId);
