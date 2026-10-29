@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 import { Worker } from 'node:worker_threads';
 import { CryptoProxy } from '@protontech/crypto';
 import { Api as CryptoApi } from '@protontech/crypto/proxy/endpoint/api.ts';
@@ -6,18 +7,30 @@ import { logger } from '../logger';
 import { nodeEndpoint } from './comlinkNode';
 import { createNodeWorkerPool } from './cryptoWorkerPool';
 
+/** Upper bound on auto-detected workers — each worker loads the crypto package
+ *  (~50–100 MB), so on a high-core NAS we cap rather than spawn a thread per core. */
+const MAX_AUTO_WORKERS = 8;
+
 /**
  * How many crypto worker threads to spin up (0 = disabled, run inline on the
  * main thread). Node decryption is CPU-bound and single-threaded inline, so
- * 2–4 workers gives a near-linear speedup of the expensive `decryptNode`
- * work during a Drive walk. Kept as an env var so it tunes without a rebuild
- * and can be disabled (`PDN_CRYPTO_WORKERS=0`) if a host is RAM-constrained.
+ * multiple workers parallelise the `decryptNode` work the SDK already issues
+ * 30-at-a-time during a Drive walk.
+ *
+ * Default = the number of CPU cores available to the process (respects a
+ * container CPU limit), capped at {@link MAX_AUTO_WORKERS}. Override with
+ * `PDN_CRYPTO_WORKERS` (0 disables and falls back to inline single-threaded).
+ * More workers than cores buys nothing and adds thread-switching overhead.
  */
 function cryptoWorkerCount(): number {
     const raw = process.env.PDN_CRYPTO_WORKERS;
-    if (raw === undefined) return 4;
+    if (raw === undefined) {
+        return Math.max(0, Math.min(availableParallelism(), MAX_AUTO_WORKERS));
+    }
     const n = Number(raw);
-    if (!Number.isFinite(n)) return 4;
+    if (!Number.isFinite(n)) {
+        return Math.max(0, Math.min(availableParallelism(), MAX_AUTO_WORKERS));
+    }
     return Math.max(0, Math.floor(n));
 }
 
