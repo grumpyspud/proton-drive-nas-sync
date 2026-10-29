@@ -69,7 +69,7 @@ class AuthService {
 
             // Fresh login: build a session and run phase 1 (auth/info + auth).
             const credentials = createSessionCredentials({ persist: true });
-            const session = buildSession(credentials, logger);
+            const session = await buildSession(credentials, logger);
             const options: LoginOptions = { username, password, humanVerificationToken };
             const pending = await beginLogin(session, logger, options);
             this.pendingSession = session;
@@ -112,7 +112,7 @@ class AuthService {
             const credentials = createSessionCredentials({ persist: true });
             await credentials.load();
             if (!credentials.uid || !credentials.refreshToken) return false;
-            const session = buildSession(credentials, logger);
+            const session = await buildSession(credentials, logger);
             const refreshed = await session.apiClient.refreshSessionIfPossible();
             if (!refreshed) return false;
             this.session = session;

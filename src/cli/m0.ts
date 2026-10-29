@@ -9,7 +9,7 @@ async function main(): Promise<void> {
 
     if (command === 'selftest') {
         const { generateKeySalt } = await import('@protontech/crypto/srp');
-        initOpenPGPCryptoModule();
+        await initOpenPGPCryptoModule();
         const salt = generateKeySalt();
         logger.info('crypto selftest OK');
         logger.info(`OpenPGP endpoint initialised; SRP module loaded; sample key salt: ${salt}`);

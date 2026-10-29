@@ -18,7 +18,7 @@ export async function loginInteractive(options: { persist?: boolean } = {}): Pro
     const password = process.env.PDN_PASSWORD ?? (await promptHidden('Password: '));
 
     const credentials = createSessionCredentials({ persist: options.persist ?? false });
-    const session = buildSession(credentials, logger);
+    const session = await buildSession(credentials, logger);
 
     const base: LoginOptions = { username, password };
 

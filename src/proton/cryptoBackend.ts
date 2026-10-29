@@ -27,26 +27,31 @@ export interface CryptoBackend {
 
 /** The current (pre-migration) OpenPGP backend. Initialised once per process —
  *  the crypto package's `CryptoProxy` endpoint is a process-global singleton
- *  that throws "already initialised" if `setEndpoint` is called twice. */
-let cachedBackend: CryptoBackend | undefined;
+ *  that throws "already initialised" if `setEndpoint` is called twice. Cached
+ *  as a PROMISE so concurrent first calls (login + resume racing) share one
+ *  init instead of tripping that singleton guard. */
+let cachedBackendPromise: Promise<CryptoBackend> | undefined;
 
-export function createOpenPGPBackend(): CryptoBackend {
-    if (cachedBackend) return cachedBackend;
-    const openPGPCryptoModule = initOpenPGPCryptoModule();
-    cachedBackend = {
-        name: 'openpgp',
-        openPGPCryptoModule,
-        cryptoProxy: CryptoProxy,
-        srpApi: { computeKeyPassword, generateKeySalt, getRandomSrpVerifier, getSrp },
-    };
-    return cachedBackend;
+export function createOpenPGPBackend(): Promise<CryptoBackend> {
+    if (!cachedBackendPromise) {
+        cachedBackendPromise = (async (): Promise<CryptoBackend> => {
+            const openPGPCryptoModule = await initOpenPGPCryptoModule();
+            return {
+                name: 'openpgp',
+                openPGPCryptoModule,
+                cryptoProxy: CryptoProxy,
+                srpApi: { computeKeyPassword, generateKeySalt, getRandomSrpVerifier, getSrp },
+            };
+        })();
+    }
+    return cachedBackendPromise;
 }
 
 /** Forget the backend and wipe the in-memory keyring so the next login
  *  re-initialises it fresh (required for switching accounts). */
 export function resetCryptoBackend(): void {
-    if (!cachedBackend) return;
-    cachedBackend = undefined;
+    if (!cachedBackendPromise) return;
+    cachedBackendPromise = undefined;
     try {
         CryptoProxy.releaseEndpoint();
     } catch {

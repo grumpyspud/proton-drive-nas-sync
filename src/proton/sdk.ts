@@ -29,8 +29,8 @@ export interface ProtonSession {
  * (defaults to the OpenPGP backend) so the upcoming crypto-model migration is a
  * one-line swap at startup.
  */
-export function buildSession(credentials: SessionCredentials, logger: Logger, backend?: CryptoBackend): ProtonSession {
-    const crypto = backend ?? createOpenPGPBackend();
+export async function buildSession(credentials: SessionCredentials, logger: Logger, backend?: CryptoBackend): Promise<ProtonSession> {
+    const crypto = backend ?? (await createOpenPGPBackend());
 
     const apiClient = new ApiClient({
         baseUrl: BASE_URL,

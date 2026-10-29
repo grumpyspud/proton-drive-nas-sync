@@ -31,7 +31,7 @@ async function resume(): Promise<void> {
         process.exit(1);
     }
 
-    const session = buildSession(credentials, logger);
+    const session = await buildSession(credentials, logger);
 
     logger.info('Refreshing access token from refresh token…');
     const refreshed = await session.apiClient.refreshSessionIfPossible();
