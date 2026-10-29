@@ -98,6 +98,19 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     let totalBytes = 0;
     let totalFiles = 0;
     const overallMeter = new SpeedMeter();
+    // Bytes in flight per relPath (parallel transfers), so the overall bar sums
+    // ALL active transfers instead of only the most recently reported one.
+    const inFlightBytes = new Map<string, number>();
+    const sumInFlightBytes = (): number => {
+        let s = 0;
+        for (const b of inFlightBytes.values()) s += b;
+        return s;
+    };
+    const finishTransfer = (relPath: string, size: number): void => {
+        inFlightBytes.delete(relPath);
+        completedBytes += size;
+        completedFiles++;
+    };
 
     onProgress?.({ type: 'sync-start', pairId, localDir, driveFolderName: options.driveFolderName ?? '' });
 
@@ -158,7 +171,8 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             if (total >= progressMinBytes) {
                 onProgress?.({ type: 'transfer', relPath, direction, bytes, total, percent, speedBps: meter.sample(bytes) });
             }
-            const jobBytes = completedBytes + bytes;
+            inFlightBytes.set(relPath, bytes);
+            const jobBytes = completedBytes + sumInFlightBytes();
             onProgress?.({
                 type: 'overall',
                 transferredBytes: jobBytes,
@@ -179,8 +193,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             size = total;
             rep(bytes, total);
         });
-        completedBytes += size;
-        completedFiles++;
+        finishTransfer(relPath, size);
     }
 
     // Resolve a conflict: local wins, but the Drive version is preserved
@@ -190,10 +203,10 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         const conflictPath = path.join(localDir, `${relPath}.conflict-${ts}`);
         await mkdir(path.dirname(conflictPath), { recursive: true });
         await downloadFile(sdk, D.uid, conflictPath, transferReporter(relPath, 'download'));
+        inFlightBytes.delete(relPath);
         completedBytes += driveSize(D.node);
         const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'), localSha1);
-        completedBytes += L.size;
-        completedFiles++;
+        finishTransfer(relPath, L.size);
         db.upsertNode({
             pairId,
             relPath,
@@ -363,8 +376,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             if (inLocal && !inDrive && !inDb) {
                 if (!parentUid) throw new Error(`No parent for ${relPath}`);
                 const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'), localSha1 ?? undefined);
-                completedBytes += L.size;
-                completedFiles++;
+                finishTransfer(relPath, L.size);
                 db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                 driveByRel.set(relPath, { relPath, uid, kind: 'file', fingerprint: `${localSha1}|${L.size}|${L.mtimeMs}`, node: undefined });
                 result.uploaded++;
@@ -404,8 +416,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
 
                 if (localChanged && !driveChanged) {
                     const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'), localSha1 ?? undefined);
-                    completedBytes += L.size;
-                    completedFiles++;
+                    finishTransfer(relPath, L.size);
                     db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                     result.uploaded++;
                     onProgress?.({ type: 'item', action: 'upload', relPath });
@@ -450,8 +461,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 if (localChanged) {
                     if (!parentUid) throw new Error(`No parent for ${relPath}`);
                     const uid = await uploadFile(sdk, parentUid, path.posix.basename(relPath), L.absPath, transferReporter(relPath, 'upload'), localSha1 ?? undefined);
-                    completedBytes += L.size;
-                    completedFiles++;
+                    finishTransfer(relPath, L.size);
                     db.upsertNode({ pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                     result.uploaded++;
                     onProgress?.({ type: 'item', action: 'upload', relPath });
