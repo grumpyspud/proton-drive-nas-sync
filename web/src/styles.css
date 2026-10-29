@@ -1375,3 +1375,131 @@ select.select:focus {
     flex-wrap: wrap;
 }
 
+/* ---------- Header dropdown menus ---------- */
+.menu-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.menu-wrap {
+    position: relative;
+}
+
+.menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 240px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-lg);
+    padding: 6px;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.menu-item {
+    appearance: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+    padding: 9px 11px;
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 600;
+    color: var(--ink-600);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+
+.menu-item:hover {
+    background: var(--bg);
+    color: var(--ink);
+}
+
+.menu-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 6px 4px;
+}
+
+.menu-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 11px;
+}
+
+.menu-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-400);
+}
+
+.menu-field .select {
+    width: 100%;
+}
+
+.menu-hint {
+    font-size: 11px;
+    color: var(--ink-400);
+    line-height: 1.4;
+}
+
+/* ---------- Create sync pair ---------- */
+.create-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+@media (max-width: 620px) {
+    .create-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.schedule-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.schedule-hint {
+    font-size: 12px;
+    color: var(--ink-400);
+}
+
+/* ---------- Activity log modal ---------- */
+.activity-log-body {
+    overflow-y: auto;
+    max-height: 60vh;
+    min-height: 120px;
+}
+
+.activity-log-body ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.activity-log-body li {
+    font-size: 12px;
+    color: var(--ink-600);
+    padding: 5px 0;
+    border-bottom: 1px solid var(--bg);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+

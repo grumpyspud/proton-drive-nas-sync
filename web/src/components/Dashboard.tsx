@@ -1,23 +1,16 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { addPair, cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getSettings, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getSettings, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
 import type { DeletionHold, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
-import { FolderBrowser } from './FolderBrowser';
 import { LogsModal } from './LogsModal';
 import { BackupModal } from './BackupModal';
 import { DuplicatesPanel } from './DuplicatesPanel';
+import { CreatePairModal } from './CreatePairModal';
+import { ActivityLogModal } from './ActivityLogModal';
+import { SYNC_FREQUENCIES, frequencyLabel, pairInterval } from '../schedule';
 
 const MAX_LOG = 200;
-
-const AUTO_SYNC_INTERVALS: Array<{ label: string; value: number }> = [
-    { label: '15 min', value: 900 },
-    { label: '30 min', value: 1800 },
-    { label: '1 hour', value: 3600 },
-    { label: '6 hours', value: 21600 },
-    { label: '12 hours', value: 43200 },
-    { label: '24 hours', value: 86400 },
-];
 
 const DEDUPE_MIN_OPTIONS: Array<{ label: string; value: number }> = [
     { label: 'No min size', value: 0 },
@@ -27,11 +20,6 @@ const DEDUPE_MIN_OPTIONS: Array<{ label: string; value: number }> = [
     { label: '1 MB', value: 1048576 },
     { label: '10 MB', value: 10485760 },
 ];
-
-function intervalLabel(seconds: number): string {
-    const match = AUTO_SYNC_INTERVALS.find((i) => i.value === seconds);
-    return match ? match.label : seconds > 0 ? `every ${Math.round(seconds / 60)} min` : '—';
-}
 
 interface Props {
     uid?: string;
@@ -62,6 +50,10 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [dupesNonce, setDupesNonce] = useState(0);
     const [reconnecting, setReconnecting] = useState(false);
     const [transferConcurrency, setTransferConcurrency] = useState(3);
+    const [showCreatePair, setShowCreatePair] = useState(false);
+    const [showActivityLog, setShowActivityLog] = useState(false);
+    const [openMenu, setOpenMenu] = useState<'logs' | 'settings' | null>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
 
     const reload = useCallback(async () => {
         try {
@@ -235,15 +227,16 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         return () => es.close();
     }, [reload, loadStorage, loadSyncStatus]);
 
-    async function onAdd(localDir: string, driveFolderName: string, settings: PairSettings) {
-        setError(null);
-        try {
-            await addPair(localDir, driveFolderName, settings);
-            await reload();
-        } catch (err) {
-            setError((err as Error).message);
+    // Close any open header dropdown when the user clicks outside it.
+    useEffect(() => {
+        function onMouseDown(e: MouseEvent) {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+                setOpenMenu(null);
+            }
         }
-    }
+        document.addEventListener('mousedown', onMouseDown);
+        return () => document.removeEventListener('mousedown', onMouseDown);
+    }, []);
 
     async function onRemove(id: string) {
         await removePair(id);
@@ -340,23 +333,60 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                             ⏹ Stop
                         </button>
                     )}
-                    <button className="btn btn-ghost" onClick={() => setShowLogs(true)}>
-                        Logs
+                    <button className="btn btn-primary" onClick={() => setShowCreatePair(true)} title="Create a new sync pair">
+                        ＋ Create Sync Pair
                     </button>
-                    <button className="btn btn-ghost" onClick={() => setShowBackup(true)} title="Create, download, or restore an encrypted backup">
-                        💾 Backup
-                    </button>
-                    <button className="btn btn-ghost" onClick={onSetAppPassword} title={appAuthEnabled ? 'Change the app password' : 'Set an app password to lock this UI'}>
-                        {appAuthEnabled ? '🔒 App password' : '🔓 Set password'}
-                    </button>
-                    {appAuthEnabled && (
-                        <button className="btn btn-ghost" onClick={onLock} title="Lock this browser — you'll need the app password to get back in">
-                            🔐 Lock
-                        </button>
-                    )}
-                    <button className="btn btn-ghost" onClick={onToggleTheme} title="Toggle light/dark mode">
-                        {theme === 'dark' ? '☀ Light' : '🌙 Dark'}
-                    </button>
+                    <div className="menu-group" ref={menuRef}>
+                        <div className="menu-wrap">
+                            <button className="btn btn-ghost" onClick={() => setOpenMenu(openMenu === 'logs' ? null : 'logs')} title="Logs">
+                                Logs ▾
+                            </button>
+                            {openMenu === 'logs' && (
+                                <div className="menu">
+                                    <button className="menu-item" onClick={() => { setShowLogs(true); setOpenMenu(null); }}>
+                                        Sync log
+                                    </button>
+                                    <button className="menu-item" onClick={() => { setShowActivityLog(true); setOpenMenu(null); }}>
+                                        Activity log
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        <div className="menu-wrap">
+                            <button className="btn btn-ghost" onClick={() => setOpenMenu(openMenu === 'settings' ? null : 'settings')} title="Settings" aria-label="Settings">
+                                ⚙
+                            </button>
+                            {openMenu === 'settings' && (
+                                <div className="menu">
+                                    <button className="menu-item" onClick={() => { setShowBackup(true); setOpenMenu(null); }}>
+                                        💾 Backup
+                                    </button>
+                                    <button className="menu-item" onClick={() => { onSetAppPassword(); setOpenMenu(null); }}>
+                                        {appAuthEnabled ? '🔒 App password' : '🔓 Set password'}
+                                    </button>
+                                    {appAuthEnabled && (
+                                        <button className="menu-item" onClick={() => { onLock(); setOpenMenu(null); }}>
+                                            🔐 Lock
+                                        </button>
+                                    )}
+                                    <button className="menu-item" onClick={onToggleTheme}>
+                                        {theme === 'dark' ? '☀ Light mode' : '🌙 Dark mode'}
+                                    </button>
+                                    <div className="menu-divider" />
+                                    <div className="menu-field">
+                                        <span className="menu-label">Max concurrent transfers</span>
+                                        <select className="select" value={transferConcurrency} onChange={(e) => onTransferConcurrencyChange(Number(e.target.value))}>
+                                            <option value={1}>1 — sequential</option>
+                                            <option value={2}>2</option>
+                                            <option value={3}>3 — default</option>
+                                            <option value={4}>4</option>
+                                        </select>
+                                        <span className="menu-hint">Higher is faster for bulk syncs but uses more bandwidth.</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                     <button className="btn btn-ghost" onClick={onLogoutClick}>
                         Sign out
                     </button>
@@ -436,27 +466,6 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                 </div>
                             </div>
                         )}
-
-                        {items.length > 0 && (
-                            <details className="activity-log">
-                                <summary>
-                                    {totalItems > items.length
-                                        ? `Activity log (last ${items.length} of ${totalItems})`
-                                        : `Activity log (${items.length})`}
-                                </summary>
-                                <ul>
-                                    {items
-                                        .slice(-60)
-                                        .reverse()
-                                        .map((it, i) => (
-                                            <li key={i}>
-                                                <span className={`tag tag-${it.action}`}>{it.action}</span>
-                                                <span className="log-path">{it.relPath}</span>
-                                            </li>
-                                        ))}
-                                </ul>
-                            </details>
-                        )}
                     </div>
                     <DuplicatesPanel nonce={dupesNonce} pairs={pairs} />
                 </section>
@@ -464,84 +473,64 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                 <section className="col col-side">
                     {storage && <StorageCard storage={storage} />}
                     <div className="card">
-                        <h2>Sync settings</h2>
-                        <div className="field">
-                            <span>Max concurrent transfers</span>
-                            <select className="select" value={transferConcurrency} onChange={(e) => onTransferConcurrencyChange(Number(e.target.value))}>
-                                <option value={1}>1 — sequential</option>
-                                <option value={2}>2</option>
-                                <option value={3}>3 — default</option>
-                                <option value={4}>4</option>
-                            </select>
-                        </div>
-                        <p className="muted">
-                            Applies to every folder pair. Higher is faster for big bulk syncs but uses more
-                            bandwidth; capped at 4 to avoid Proton rate-limiting. Takes effect on the next sync.
-                        </p>
-                    </div>
-                    <div className="card">
                         <h2>Folder pairs</h2>
-                        <AddPairForm onAdd={onAdd} />
                         <ul className="pair-list">
-                            {pairs.map((p) => (
-                                <li key={p.id} className="pair">
-                                    <div className="pair-main">
-                                        <div className="pair-info">
-                                            <div className="pair-name">
-                                                {p.driveFolderName || 'My Files (root)'}
-                                                {p.realTime && (
-                                                    <span className="badge badge-live">
-                                                        <span className="pulse" /> live
-                                                    </span>
-                                                )}
-                                                {p.autoSync && p.intervalSeconds > 0 && (
-                                                    <span className="badge">⏱ {intervalLabel(p.intervalSeconds)}</span>
-                                                )}
+                            {pairs.map((p) => {
+                                const interval = pairInterval(p);
+                                return (
+                                    <li key={p.id} className="pair">
+                                        <div className="pair-main">
+                                            <div className="pair-info">
+                                                <div className="pair-name">
+                                                    {p.driveFolderName || 'My Files (root)'}
+                                                    {interval !== null && (
+                                                        <span className="badge">⏱ {frequencyLabel(interval)}</span>
+                                                    )}
+                                                </div>
+                                                <div className="pair-dir">{p.localDir}</div>
                                             </div>
-                                            <div className="pair-dir">{p.localDir}</div>
+                                            <div className="pair-actions">
+                                                <button className="btn btn-primary btn-sm" onClick={() => onSync(p.id)} disabled={syncing || paused}>
+                                                    Sync
+                                                </button>
+                                                <button className="btn btn-ghost btn-sm" onClick={() => setTrashPair(p)}>
+                                                    Trash
+                                                </button>
+                                                <button className="btn btn-ghost btn-sm" onClick={() => onRemove(p.id)}>
+                                                    Remove
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div className="pair-actions">
-                                            <button className="btn btn-primary btn-sm" onClick={() => onSync(p.id)} disabled={syncing || paused}>
-                                                Sync
-                                            </button>
-                                            <button className="btn btn-ghost btn-sm" onClick={() => setTrashPair(p)}>
-                                                Trash
-                                            </button>
-                                            <button className="btn btn-ghost btn-sm" onClick={() => onRemove(p.id)}>
-                                                Remove
-                                            </button>
+                                        <div className="pair-settings">
+                                            <Toggle
+                                                label="Auto-sync"
+                                                checked={interval !== null}
+                                                onChange={(v) => onUpdatePair(p.id, { realTime: false, autoSync: v, intervalSeconds: v ? interval ?? 3600 : interval ?? 0 })}
+                                            />
+                                            {interval !== null && (
+                                                <select className="select" value={interval} onChange={(e) => onUpdatePair(p.id, { realTime: false, autoSync: true, intervalSeconds: Number(e.target.value) })}>
+                                                    {SYNC_FREQUENCIES.map((f) => (
+                                                        <option key={f.value} value={f.value}>
+                                                            {f.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                            <Toggle label="Dedupe" checked={p.dedupeEnabled} onChange={(v) => onUpdatePair(p.id, { dedupeEnabled: v })} />
+                                            {p.dedupeEnabled && (
+                                                <select className="select" value={p.dedupeMinBytes} onChange={(e) => onUpdatePair(p.id, { dedupeMinBytes: Number(e.target.value) })}>
+                                                    {DEDUPE_MIN_OPTIONS.map((o) => (
+                                                        <option key={o.value} value={o.value}>
+                                                            {o.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            )}
                                         </div>
-                                    </div>
-                                    <div className="pair-settings">
-                                        <Toggle label="Real-time" checked={p.realTime} onChange={(v) => onUpdatePair(p.id, { realTime: v })} />
-                                        <Toggle
-                                            label="Auto-sync"
-                                            checked={p.autoSync}
-                                            onChange={(v) => onUpdatePair(p.id, { autoSync: v, intervalSeconds: v ? p.intervalSeconds || 3600 : p.intervalSeconds })}
-                                        />
-                                        {p.autoSync && (
-                                            <select className="select" value={p.intervalSeconds} onChange={(e) => onUpdatePair(p.id, { intervalSeconds: Number(e.target.value) })}>
-                                                {AUTO_SYNC_INTERVALS.map((i) => (
-                                                    <option key={i.value} value={i.value}>
-                                                        {i.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        )}
-                                        <Toggle label="Dedupe" checked={p.dedupeEnabled} onChange={(v) => onUpdatePair(p.id, { dedupeEnabled: v })} />
-                                        {p.dedupeEnabled && (
-                                            <select className="select" value={p.dedupeMinBytes} onChange={(e) => onUpdatePair(p.id, { dedupeMinBytes: Number(e.target.value) })}>
-                                                {DEDUPE_MIN_OPTIONS.map((o) => (
-                                                    <option key={o.value} value={o.value}>
-                                                        {o.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        )}
-                                    </div>
-                                </li>
-                            ))}
-                            {pairs.length === 0 && <li className="muted">No pairs yet. Add one to start syncing.</li>}
+                                    </li>
+                                );
+                            })}
+                            {pairs.length === 0 && <li className="muted">No pairs yet. Click "Create Sync Pair" in the top bar to add one.</li>}
                         </ul>
                     </div>
                 </section>
@@ -551,6 +540,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
 
             {trashPair && <TrashModal pair={trashPair} onClose={() => setTrashPair(null)} />}
             {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
+            {showActivityLog && <ActivityLogModal items={items} totalItems={totalItems} onClose={() => setShowActivityLog(false)} />}
+            {showCreatePair && <CreatePairModal onCreated={reload} onClose={() => setShowCreatePair(false)} />}
             {showBackup && <BackupModal onClose={() => setShowBackup(false)} />}
         </div>
     );
@@ -768,62 +759,5 @@ function TrashModal({ pair, onClose }: { pair: Pair; onClose: () => void }) {
                 )}
             </div>
         </div>
-    );
-}
-
-function AddPairForm({ onAdd }: { onAdd: (localDir: string, driveFolderName: string, settings: PairSettings) => Promise<void> }) {
-    const [localDir, setLocalDir] = useState('');
-    const [folder, setFolder] = useState('');
-    const [realTime, setRealTime] = useState(false);
-    const [autoSync, setAutoSync] = useState(false);
-    const [intervalSeconds, setIntervalSeconds] = useState(3600);
-    const [busy, setBusy] = useState(false);
-
-    async function submit(e: FormEvent) {
-        e.preventDefault();
-        if (!localDir) return;
-        setBusy(true);
-        try {
-            await onAdd(localDir, folder, { realTime, autoSync, intervalSeconds: autoSync ? intervalSeconds : 0 });
-            setLocalDir('');
-            setFolder('');
-            setRealTime(false);
-            setAutoSync(false);
-            setIntervalSeconds(3600);
-        } finally {
-            setBusy(false);
-        }
-    }
-
-    return (
-        <form className="add-form" onSubmit={submit}>
-            <div className="field">
-                <span>Local folder (NAS)</span>
-                <FolderBrowser mode="local" value={localDir} onChange={setLocalDir} placeholder="/data" />
-            </div>
-            <div className="field">
-                <span>Proton Drive folder</span>
-                <FolderBrowser mode="drive" value={folder} onChange={setFolder} placeholder="My Files" />
-            </div>
-            <div className="field">
-                <span>Sync schedule</span>
-                <div className="toggle-row">
-                    <Toggle label="Real-time (1 min)" checked={realTime} onChange={setRealTime} />
-                    <Toggle label="Auto-sync" checked={autoSync} onChange={setAutoSync} />
-                </div>
-                {autoSync && (
-                    <select className="select" value={intervalSeconds} onChange={(e) => setIntervalSeconds(Number(e.target.value))}>
-                        {AUTO_SYNC_INTERVALS.map((i) => (
-                            <option key={i.value} value={i.value}>
-                                {i.label}
-                            </option>
-                        ))}
-                    </select>
-                )}
-            </div>
-            <button className="btn btn-primary" type="submit" disabled={busy || !localDir}>
-                Add pair
-            </button>
-        </form>
     );
 }
