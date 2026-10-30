@@ -459,39 +459,57 @@ function isSystemMountPoint(mp: string): boolean {
     return SYSTEM_MOUNT_PREFIXES.some((p) => mp === p || mp.startsWith(`${p}/`));
 }
 
+/** Parse /proc/self/mountinfo and return the bind-mounted data paths. */
+function detectDataMountPaths(mountInfo: string): string[] {
+    const paths: string[] = [];
+    const seen = new Set<string>();
+    for (const line of mountInfo.split('\n')) {
+        if (!line) continue;
+        const parts = line.split(' ');
+        const sep = parts.indexOf('-');
+        if (sep < 0 || sep + 1 >= parts.length) continue;
+        const fstype = parts[sep + 1];
+        if (!fstype || PSEUDO_FS.has(fstype)) continue;
+        const mountField = parts[4];
+        if (!mountField) continue;
+        const mountPoint = unescapeMountField(mountField);
+        if (!mountPoint) continue;
+        if (isSystemMountPoint(mountPoint)) continue;
+        if (seen.has(mountPoint)) continue;
+        seen.add(mountPoint);
+        paths.push(mountPoint);
+    }
+    if (paths.length === 0) paths.push('/data');
+    return paths;
+}
+
 /**
  * Data volumes = every non-system, non-pseudo filesystem bind-mounted into the
  * container (e.g. /data, or NAS shares under /data/<name>). /config and the
  * container's own overlay/root are excluded. Falls back to /data if no mounts
  * are detected.
  */
-async function localVolumes(): Promise<LocalVolume[]> {
-    const paths: string[] = [];
-    const seen = new Set<string>();
+function dataMountPaths(): string[] {
     try {
-        const lines = readFileSync('/proc/self/mountinfo', 'utf8').split('\n');
-        for (const line of lines) {
-            if (!line) continue;
-            const parts = line.split(' ');
-            const sep = parts.indexOf('-');
-            if (sep < 0 || sep + 1 >= parts.length) continue;
-            const fstype = parts[sep + 1];
-            if (!fstype || PSEUDO_FS.has(fstype)) continue;
-            const mountField = parts[4];
-            if (!mountField) continue;
-            const mountPoint = unescapeMountField(mountField);
-            if (!mountPoint) continue;
-            if (isSystemMountPoint(mountPoint)) continue;
-            if (seen.has(mountPoint)) continue;
-            seen.add(mountPoint);
-            paths.push(mountPoint);
-        }
+        return detectDataMountPaths(readFileSync('/proc/self/mountinfo', 'utf8'));
     } catch {
-        /* /proc/self/mountinfo unavailable — fall back to /data only */
+        return ['/data'];
     }
-    if (paths.length === 0) paths.push('/data');
+}
+
+/** True if `input` is equal to, or inside, a bind-mounted data volume. */
+function isSafeLocalPath(input: string): boolean {
+    if (!input) return false;
+    const abs = path.resolve(input);
+    return dataMountPaths().some((vol) => {
+        const v = path.resolve(vol);
+        return abs === v || abs.startsWith(`${v}${path.sep}`);
+    });
+}
+
+async function localVolumes(): Promise<LocalVolume[]> {
     const volumes: LocalVolume[] = [];
-    for (const p of paths) {
+    for (const p of dataMountPaths()) {
         try {
             const st = await statfs(p);
             const total = st.blocks * st.bsize;
@@ -611,6 +629,11 @@ app.post('/api/pairs', requireAuth, async (req, res) => {
     const { localDir, driveFolderName, realTime, autoSync, intervalSeconds, dedupeEnabled, dedupeMinBytes } = (req.body ?? {}) as PairBody;
     if (!localDir) {
         res.status(400).json({ error: 'localDir is required' });
+        return;
+    }
+    if (!isSafeLocalPath(localDir)) {
+        const vols = dataMountPaths().join(', ');
+        res.status(400).json({ error: `Local folder must be inside a mounted volume (${vols}). "${localDir}" is inside the container and would be lost on rebuild.` });
         return;
     }
     const driveFolder = driveFolderName ?? '';

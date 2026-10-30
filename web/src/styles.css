@@ -344,6 +344,16 @@ input:focus {
     border: 1px solid var(--tag-ok-bg);
 }
 
+.alert-warn {
+    background: var(--tag-warn-bg);
+    color: var(--tag-warn-fg);
+    border: 1px solid var(--warning);
+    border-radius: var(--radius-sm);
+    padding: 10px 13px;
+    font-size: 13px;
+    margin-bottom: 14px;
+}
+
 .hv-box {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);

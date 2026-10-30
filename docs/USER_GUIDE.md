@@ -43,8 +43,9 @@ the other).
 ### Creating a pair
 
 1. Click **＋ Create Sync Pair** in the top bar.
-2. **NAS / local folder** — browse or type an absolute path under `/data`
-   (e.g. `/data/photos`).
+2. **NAS / local folder** — browse or type an absolute path under a mounted
+   volume (e.g. `/data/photos`). The app only accepts folders on a mounted
+   volume; a path inside the container itself is rejected with a warning.
 3. **Proton Drive folder** — pick an existing Drive folder, or **My Files (entire
    drive)** to sync the whole drive.
 4. **Sync schedule** — **Manual** or **Auto-sync** (see below).

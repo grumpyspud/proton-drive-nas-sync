@@ -566,7 +566,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
             {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
             {showActivityLog && <ActivityLogModal items={items} totalItems={totalItems} onClose={() => setShowActivityLog(false)} />}
             {showErrorLog && <ErrorLogModal onClose={() => { setShowErrorLog(false); void loadErrorStatus(); }} />}
-            {showCreatePair && <CreatePairModal onCreated={reload} onClose={() => setShowCreatePair(false)} />}
+            {showCreatePair && <CreatePairModal volumes={localVolumes} onCreated={reload} onClose={() => setShowCreatePair(false)} />}
             {dedupePair && <DuplicatesModal pair={dedupePair} onClose={() => setDedupePair(null)} />}
             {showBackup && <BackupModal onClose={() => setShowBackup(false)} />}
         </div>

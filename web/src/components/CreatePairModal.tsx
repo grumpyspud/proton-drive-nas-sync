@@ -1,24 +1,53 @@
 import { useState } from 'react';
 import { addPair } from '../api';
+import type { LocalVolume } from '../types';
 import { FolderBrowser } from './FolderBrowser';
 import { SYNC_FREQUENCIES } from '../schedule';
 
+function normalizeAbs(p: string): string {
+    const stack: string[] = [];
+    for (const part of p.split('/')) {
+        if (!part || part === '.') continue;
+        if (part === '..') { stack.pop(); continue; }
+        stack.push(part);
+    }
+    return '/' + stack.join('/');
+}
+
+function isSafeLocalDir(localDir: string, volumes: LocalVolume[]): boolean {
+    const raw = localDir.trim();
+    if (!raw) return true;                  // nothing chosen yet
+    if (!raw.startsWith('/')) return false; // relative path -> not a mounted volume
+    if (volumes.length === 0) return true;  // volumes unknown -> let the server decide
+    const abs = normalizeAbs(raw);
+    return volumes.some((v) => {
+        const vol = normalizeAbs(v.path);
+        return abs === vol || abs.startsWith(`${vol}/`);
+    });
+}
+
 interface Props {
+    volumes: LocalVolume[];
     onCreated: () => Promise<void> | void;
     onClose: () => void;
 }
 
-export function CreatePairModal({ onCreated, onClose }: Props) {
+export function CreatePairModal({ volumes, onCreated, onClose }: Props) {
     const [localDir, setLocalDir] = useState('');
     const [folder, setFolder] = useState('');
     const [autoSync, setAutoSync] = useState(false);
     const [intervalSeconds, setIntervalSeconds] = useState(3600);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const safe = isSafeLocalDir(localDir, volumes);
 
     async function submit() {
         if (!localDir.trim()) {
             setError('Choose a NAS folder first.');
+            return;
+        }
+        if (!safe) {
+            setError('Local folder must be inside a mounted volume.');
             return;
         }
         setBusy(true);
@@ -59,6 +88,14 @@ export function CreatePairModal({ onCreated, onClose }: Props) {
                     </div>
                 </div>
 
+                {!safe && (
+                    <div className="alert-warn">
+                        ⚠ This folder is not on a mounted volume. Files would be written inside the
+                        container and lost on rebuild/update — not to your NAS. Choose a folder under a
+                        mounted volume{volumes.length > 0 ? ` (${volumes.map((v) => v.path).join(', ')})` : ''}.
+                    </div>
+                )}
+
                 <div className="field">
                     <span>Sync schedule</span>
                     <div className="schedule-row">
@@ -90,7 +127,7 @@ export function CreatePairModal({ onCreated, onClose }: Props) {
                     <button className="btn btn-ghost" onClick={onClose} disabled={busy}>
                         Cancel
                     </button>
-                    <button className="btn btn-primary" onClick={() => void submit()} disabled={busy || !localDir.trim()}>
+                    <button className="btn btn-primary" onClick={() => void submit()} disabled={busy || !localDir.trim() || !safe}>
                         Create pair
                     </button>
                 </div>

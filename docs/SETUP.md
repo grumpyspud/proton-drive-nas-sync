@@ -164,8 +164,11 @@ folder on the NAS and the matching Proton Drive folder:
 
 ![Add a folder pair](screenshots/07-add-pair-folder-picker.png)
 
-- **NAS / local folder** — an absolute path under `/data` (e.g. `/data/photos`).
-  You can browse subfolders or click **New folder** to create one.
+- **NAS / local folder** — an absolute path under a mounted volume (e.g.
+  `/data/photos`). You can browse subfolders or click **New folder** to create
+  one. The local folder must be on a mounted volume — a path inside the container
+  (not on your NAS) is rejected with a warning, so a sync can't accidentally write
+  to the container itself.
 - **Proton Drive folder** — pick an existing Drive folder, or **My Files (entire
   drive)** to sync the whole drive.
 - **Sync schedule** — either **Manual** (sync only when you click **Sync**) or

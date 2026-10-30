@@ -71,6 +71,8 @@ services:
   survive reboots and image rebuilds.
 - Bind each NAS folder you want to sync under `/data/<name>`. In the web UI, set
   the pair's **local folder** to that absolute path (e.g. `/data/photos`).
+- Only folders on a mounted volume can be paired — a path inside the container
+  itself is rejected, so a sync can't write to the container's own storage.
 
 ## 3. First run
 
