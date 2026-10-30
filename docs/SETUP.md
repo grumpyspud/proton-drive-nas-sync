@@ -155,7 +155,7 @@ The top bar holds the global controls:
   [step 13](#13-viewing-logs)).
 - **⚙ Settings** — **💾 Backup**, **🔒 App password**, **🔐 Lock**,
   **☀ Light / 🌙 Dark**, and **Max concurrent transfers**.
-- **Sign out**.
+- **Sign out** — signs out of Proton and removes all folder pairs (with a confirmation pop-up; your synced files are not touched).
 
 ---
 

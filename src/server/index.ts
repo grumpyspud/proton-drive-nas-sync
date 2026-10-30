@@ -406,9 +406,89 @@ app.post('/api/auth/login', async (req, res) => {
     res.json(result);
 });
 
-app.post('/api/auth/logout', async (_req, res) => {
+class SyncBusyError extends Error {}
+
+/**
+ * Poll until no sync is running. Setting `stopRequested` makes an in-flight sync
+ * throw at its next safe boundary (file / folder / deletion barrier), so this
+ * normally resolves within seconds. Returns false if it is still running at the
+ * deadline (e.g. a single very large file mid-transfer).
+ */
+function waitForSyncToStop(timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+        const deadline = Date.now() + timeoutMs;
+        const check = () => {
+            if (!syncing) resolve(true);
+            else if (Date.now() >= deadline) resolve(false);
+            else setTimeout(check, 100);
+        };
+        check();
+    });
+}
+
+/**
+ * Full sign-out. Stops all syncing, empties every pair's local `.pdn-trash`,
+ * drops all pair/account sync state (pairs + nodes + dupe_ignored), then signs
+ * out of Proton (which deletes the session blob and releases the crypto keys).
+ *
+ * The user's actual synced files are deliberately NOT touched — only the app's
+ * own bookkeeping and its recycle bins. The `settings` table (a UI preference,
+ * not account data) is preserved.
+ */
+async function signOutAndReset(): Promise<void> {
+    // 1. Stop the scheduler and ask any in-flight sync to unwind at its next boundary.
+    paused = true;
+    stopRequested = true;
+    const stopped = await waitForSyncToStop(30_000);
+    if (!stopped) {
+        // Don't wipe state underneath a running sync — restore and let the caller retry.
+        paused = false;
+        stopRequested = false;
+        throw new SyncBusyError('A sync is still finishing — stop it and try again.');
+    }
+
+    // 2. Empty each pair's local trash, then drop its DB state.
+    const db = new SyncDB(syncDbPath());
+    try {
+        for (const pair of db.listPairs()) {
+            try {
+                await clearTrash(pair.localDir);
+            } catch (err) {
+                // An unmounted/missing share must not block sign-out.
+                logger.warn(`Sign out: could not clear local trash for ${pair.localDir}: ${(err as Error).message}`);
+            }
+            db.removePair(pair.id);
+        }
+    } finally {
+        db.close();
+    }
+
+    // 3. Sign out of Proton (releases the crypto keys), then make sure the
+    //    persisted session blob is gone even if it was never resumed into memory
+    //    (e.g. the server restarted and the UI never reloaded the session).
     await authService.logout();
-    res.json({ ok: true });
+    rmSync(path.join(configDir(), 'session.blob'), { force: true });
+
+    // 4. Reset in-memory sync state so the next sign-in starts clean.
+    paused = false;
+    stopRequested = false;
+    pendingDeletion = null;
+    followUpPairId = null;
+    logger.info('Signed out — cleared all folder pairs and local trash');
+}
+
+app.post('/api/auth/logout', async (_req, res) => {
+    try {
+        await signOutAndReset();
+        res.json({ ok: true });
+    } catch (err) {
+        if (err instanceof SyncBusyError) {
+            res.status(409).json({ error: err.message });
+            return;
+        }
+        logger.error('Sign out failed', err);
+        res.status(500).json({ error: (err as Error).message });
+    }
 });
 
 app.get('/api/storage', requireAuth, async (_req, res) => {

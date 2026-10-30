@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
+import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, listPairs, listTrash, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
 import type { DeletionHold, ErrorLogStatus, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
@@ -9,6 +9,7 @@ import { BackupModal } from './BackupModal';
 import { DuplicatesModal } from './DuplicatesModal';
 import { CreatePairModal } from './CreatePairModal';
 import { ActivityLogModal } from './ActivityLogModal';
+import { SignOutModal } from './SignOutModal';
 import { SYNC_FREQUENCIES, frequencyLabel, pairInterval } from '../schedule';
 
 const MAX_LOG = 200;
@@ -46,6 +47,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [showCreatePair, setShowCreatePair] = useState(false);
     const [showActivityLog, setShowActivityLog] = useState(false);
     const [showErrorLog, setShowErrorLog] = useState(false);
+    const [showSignOut, setShowSignOut] = useState(false);
     const [errorLogStatus, setErrorLogStatus] = useState<ErrorLogStatus | null>(null);
     const [openMenu, setOpenMenu] = useState<'logs' | 'settings' | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -327,11 +329,6 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         }
     }
 
-    async function onLogoutClick() {
-        await logout();
-        onLogout();
-    }
-
     async function onTransferConcurrencyChange(value: number) {
         setError(null);
         try {
@@ -418,7 +415,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                             )}
                         </div>
                     </div>
-                    <button className="btn btn-ghost" onClick={onLogoutClick}>
+                    <button className="btn btn-ghost" onClick={() => setShowSignOut(true)}>
                         Sign out
                     </button>
                 </div>
@@ -569,6 +566,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
             {showCreatePair && <CreatePairModal volumes={localVolumes} onCreated={reload} onClose={() => setShowCreatePair(false)} />}
             {dedupePair && <DuplicatesModal pair={dedupePair} onClose={() => setDedupePair(null)} />}
             {showBackup && <BackupModal onClose={() => setShowBackup(false)} />}
+            {showSignOut && <SignOutModal pairCount={pairs.length} onClose={() => setShowSignOut(false)} onSignedOut={onLogout} />}
         </div>
     );
 }

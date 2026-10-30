@@ -30,7 +30,7 @@ After signing in you land on the dashboard, with two columns:
 | **＋ Create Sync Pair** | Add a new folder pair. |
 | **Logs ▾** | **Sync log** (recent server log, searchable, downloadable), **Activity log** (recent events), or **Error log** (errors/conflicts/warnings). Turns **red** (errors) or **yellow** (warnings/conflicts) when there are new entries. |
 | **⚙ Settings** | Backup, app password, lock, theme, and max concurrent transfers. |
-| **Sign out** | Sign out of Proton. |
+| **Sign out** | Sign out of Proton and reset all sync state (see [Signing out](#signing-out)). |
 
 ---
 
@@ -204,6 +204,29 @@ Entries are colour-coded by severity — **error** (red), **conflict** (orange),
 > The main sync log is rotated once it grows large, so an early problem on a long
 > sync could scroll away. The error log is separate and only records
 > errors/conflicts/warnings, so those survive.
+
+---
+
+## Signing out
+
+Clicking **Sign out** in the top bar signs the app out of Proton — and because it
+can no longer sync once signed out, it performs a **full reset of its sync state**:
+
+- **Removes every folder pair.**
+- **Empties each pair's local trash** (the `.pdn-trash` recycle bin).
+- **Deletes all sync state** — per-file records, hashes, and dedupe ignore lists.
+- **Stops all syncs** and **signs out of Proton**, deleting the saved session.
+
+A confirmation pop-up spells this out before anything happens:
+
+![Sign out confirmation](screenshots/22-signout.png)
+
+**No other data is deleted.** Your actual files — the ones in your synced folders
+on the NAS, and their copies in Proton Drive — are left exactly where they are.
+
+> After signing out you'll need to sign in again and recreate your folder pairs.
+> To move this setup to another machine instead, use **Backup** (Settings → Backup),
+> which captures the pairs and session so you don't have to rebuild them.
 
 ---
 

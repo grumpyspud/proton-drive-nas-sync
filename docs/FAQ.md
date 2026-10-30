@@ -234,6 +234,18 @@ Be aware of these before relying on it:
 Not automatically. The sync engine only trashes (Drive) and recycles (local).
 Permanent deletion is a separate, explicit action you take in the Trash view.
 
+### What happens when I sign out?
+
+**Sign out** does a full reset of the app's sync state: it removes every folder
+pair, empties each pair's local trash (`.pdn-trash`), deletes the per-file sync
+records and dedupe ignore lists, stops all syncing, and signs you out of Proton
+(deleting the saved session). A confirmation pop-up lists all of this first.
+
+**Your files are not touched** — the synced files on the NAS and their copies in
+Proton Drive stay exactly where they are. Sign out only clears the app's own
+bookkeeping. You'll need to sign in again and recreate your folder pairs; if you
+want to keep the setup, use **Backup** instead.
+
 ### Does it run on my NAS?
 
 Any NAS that runs Docker (TrueNAS, Synology, QNAP, Unraid, etc.). Images are
