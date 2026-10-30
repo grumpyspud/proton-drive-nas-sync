@@ -225,7 +225,7 @@ export function DuplicatesModal({ pair, onClose }: Props) {
                                         ))}
                                     </div>
                                     <button className="btn btn-ghost btn-sm" onClick={() => void unignore(g.files)}>
-                                        Remove
+                                        Reset
                                     </button>
                                 </li>
                             ))}
