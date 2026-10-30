@@ -17,7 +17,7 @@ and Proton Drive.
   drive can never wipe your data.
 - **Web UI** — Proton-style login (SRP + optional 2FA + optional mailbox
   password), folder-pair manager, and a live sync dashboard with progress bars
-  (percent + speed), storage usage, and low-space warnings.
+  (files processed + bytes + network rate), storage usage, and low-space warnings.
 - **Flexible schedules** — manual or auto-sync, from every 1 minute up to monthly.
 - **Duplicate-file scan** — find and recycle duplicate files within a pair, with a
   minimum-size filter and an ignore list.
