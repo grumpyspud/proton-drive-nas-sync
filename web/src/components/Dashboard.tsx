@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getSettings, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
 import type { DeletionHold, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
@@ -614,6 +614,17 @@ function StorageCard({ storage }: { storage: StorageInfo }) {
     const max = storage.maxBytes;
     const pct = max > 0 ? Math.min(100, (storage.driveBytes / max) * 100) : 0;
     const showTotal = storage.usedBytes > 0 && storage.usedBytes !== storage.driveBytes;
+
+    // Bar colour shifts from the default accent to a warning yellow-orange past 80%,
+    // getting progressively redder toward 90%, then solid red (with a message) above 90%.
+    let fillStyle: CSSProperties = {};
+    if (pct >= 90) {
+        fillStyle.background = 'linear-gradient(90deg, color-mix(in srgb, var(--danger) 65%, var(--warning) 35%), var(--danger))';
+    } else if (pct > 80) {
+        const d = Math.round(((pct - 80) / 10) * 100);
+        fillStyle.background = `linear-gradient(90deg, var(--warning), color-mix(in srgb, var(--warning) ${100 - d}%, var(--danger) ${d}%))`;
+    }
+
     return (
         <div className="card">
             <h2>Storage</h2>
@@ -624,8 +635,9 @@ function StorageCard({ storage }: { storage: StorageInfo }) {
                 <span className="pct">{pct.toFixed(1)}%</span>
             </div>
             <div className="progress-track">
-                <div className="progress-fill fill-upload" style={{ width: `${pct}%` }} />
+                <div className={`progress-fill ${pct > 80 ? '' : 'fill-upload'}`} style={{ width: `${pct}%`, ...fillStyle }} />
             </div>
+            {pct >= 90 && <div className="storage-warning">Warning: Drive space almost full</div>}
             <div className="storage-sub">
                 {storage.displayName || storage.email}
                 {showTotal && <> · {formatBytes(storage.usedBytes)} used across all products</>}

@@ -717,6 +717,14 @@ input:focus {
     color: var(--ink-400);
 }
 
+.storage-warning {
+    display: block;
+    margin-top: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--danger);
+}
+
 /* ---------- Activity log ---------- */
 .activity-log {
     margin-top: 18px;
