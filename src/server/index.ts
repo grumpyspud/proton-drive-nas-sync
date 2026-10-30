@@ -477,7 +477,10 @@ async function signOutAndReset(): Promise<void> {
     logger.info('Signed out — cleared all folder pairs and local trash');
 }
 
-app.post('/api/auth/logout', async (_req, res) => {
+// Sign out is destructive (it clears all pairs + trash), so require a live session
+// like every other mutating route — an unauthenticated client must not be able to
+// wipe sync state with a bare POST.
+app.post('/api/auth/logout', requireAuth, async (_req, res) => {
     try {
         await signOutAndReset();
         res.json({ ok: true });
