@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { getDuplicates, ignoreDuplicates, recycleDuplicates } from '../api';
+import { useEffect, useState } from 'react';
+import { getDuplicates, ignoreDuplicates, listIgnored, recycleDuplicates, resetIgnored, unignoreDuplicates } from '../api';
 import type { DuplicateGroup, Pair } from '../types';
 import { formatBytes } from '../format';
 
@@ -34,6 +34,38 @@ export function DuplicatesModal({ pair, onClose }: Props) {
     const [notice, setNotice] = useState<string | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
     const [keep, setKeep] = useState<Record<string, boolean>>({});
+    const [ignored, setIgnored] = useState<string[]>([]);
+
+    async function loadIgnored() {
+        try {
+            setIgnored((await listIgnored(pair.id)).ignored);
+        } catch {
+            // non-fatal — the ignore list is best-effort
+        }
+    }
+
+    useEffect(() => {
+        void loadIgnored();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pair.id]);
+
+    async function unignore(relPaths: string[]) {
+        try {
+            await unignoreDuplicates(pair.id, relPaths);
+            await loadIgnored();
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function resetAllIgnored() {
+        try {
+            await resetIgnored(pair.id);
+            await loadIgnored();
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
 
     async function scan() {
         setLoading(true);
@@ -63,6 +95,7 @@ export function DuplicatesModal({ pair, onClose }: Props) {
         setNotice(null);
         try {
             await ignoreDuplicates(pair.id, g.files.map((f) => f.relPath));
+            await loadIgnored();
             await scan();
         } catch (err) {
             setError((err as Error).message);
@@ -166,6 +199,31 @@ export function DuplicatesModal({ pair, onClose }: Props) {
                         })}
                     </div>
                 )}
+
+                <div className="dupe-ignored">
+                    <div className="dupe-ignored-head">
+                        <h3>Ignored files{ignored.length > 0 ? ` (${ignored.length})` : ''}</h3>
+                        {ignored.length > 0 && (
+                            <button className="btn btn-ghost btn-sm" onClick={() => void resetAllIgnored()}>
+                                Reset all
+                            </button>
+                        )}
+                    </div>
+                    {ignored.length === 0 ? (
+                        <div className="muted">No files are currently ignored for this folder.</div>
+                    ) : (
+                        <ul className="dupe-ignored-list">
+                            {ignored.map((rp) => (
+                                <li key={rp} className="dupe-ignored-item">
+                                    <span className="dupe-path">{rp}</span>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => void unignore([rp])}>
+                                        Remove
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
             </div>
         </div>
     );

@@ -672,6 +672,55 @@ app.post('/api/pairs/:id/duplicates/ignore', requireAuth, (req, res) => {
     }
 });
 
+app.get('/api/pairs/:id/duplicates/ignored', requireAuth, (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    const db = new SyncDB(syncDbPath());
+    try {
+        res.json({ ignored: [...db.ignoredPaths(pair.id)].sort() });
+    } finally {
+        db.close();
+    }
+});
+
+app.post('/api/pairs/:id/duplicates/unignore', requireAuth, (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    const { relPaths } = (req.body ?? {}) as { relPaths?: string[] };
+    if (!Array.isArray(relPaths) || relPaths.length === 0) {
+        res.status(400).json({ error: 'relPaths must be a non-empty array' });
+        return;
+    }
+    const db = new SyncDB(syncDbPath());
+    try {
+        const n = db.unignorePaths(pair.id, relPaths);
+        res.json({ ok: true, unignored: n });
+    } finally {
+        db.close();
+    }
+});
+
+app.post('/api/pairs/:id/duplicates/ignored/reset', requireAuth, (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    const db = new SyncDB(syncDbPath());
+    try {
+        const n = db.clearIgnoredPaths(pair.id);
+        res.json({ ok: true, unignored: n });
+    } finally {
+        db.close();
+    }
+});
+
 app.post('/api/pairs/:id/duplicates/recycle', requireAuth, async (req, res) => {
     const pair = getPairOrNull(req.params.id as string);
     if (!pair) {

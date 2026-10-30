@@ -259,6 +259,19 @@ export class SyncDB {
         for (const rp of relPaths) insert.run(pairId, rp);
     }
 
+    /** Remove the given relPaths from the pair's ignore list; returns rows removed. */
+    unignorePaths(pairId: string, relPaths: string[]): number {
+        const del = this.db.prepare('DELETE FROM dupe_ignored WHERE pair_id = ? AND rel_path = ?');
+        let n = 0;
+        for (const rp of relPaths) n += Number(del.run(pairId, rp).changes);
+        return n;
+    }
+
+    /** Clear the pair's entire ignore list; returns rows removed. */
+    clearIgnoredPaths(pairId: string): number {
+        return Number(this.db.prepare('DELETE FROM dupe_ignored WHERE pair_id = ?').run(pairId).changes);
+    }
+
     /**
      * Group file nodes by content (sha1 + size), returning only groups with 2+
      * files. Excludes 0-byte files (always) and files below `minBytes`, plus any

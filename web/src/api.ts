@@ -201,6 +201,18 @@ export function ignoreDuplicates(id: string, relPaths: string[]): Promise<{ ok: 
     return request(`/api/pairs/${encodeURIComponent(id)}/duplicates/ignore`, { method: 'POST', body: JSON.stringify({ relPaths }) });
 }
 
+export function listIgnored(id: string): Promise<{ ignored: string[] }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/duplicates/ignored`);
+}
+
+export function unignoreDuplicates(id: string, relPaths: string[]): Promise<{ ok: boolean; unignored: number }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/duplicates/unignore`, { method: 'POST', body: JSON.stringify({ relPaths }) });
+}
+
+export function resetIgnored(id: string): Promise<{ ok: boolean; unignored: number }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/duplicates/ignored/reset`, { method: 'POST' });
+}
+
 export function recycleDuplicates(id: string, relPaths: string[]): Promise<{ ok: boolean; recycled: number }> {
     return request(`/api/pairs/${encodeURIComponent(id)}/duplicates/recycle`, { method: 'POST', body: JSON.stringify({ relPaths }) });
 }
