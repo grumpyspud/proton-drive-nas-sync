@@ -1,0 +1,269 @@
+# FAQ — Proton Drive NAS Sync
+
+> **⚠️ Third-party application — not affiliated with, endorsed by, or supported
+> by Proton AG.**
+
+---
+
+## Why was this app made?
+
+> **[Jon — your answer goes here: the motivation / backstory.]**
+
+---
+
+## Is this official? Is it supported by Proton?
+
+No. This is a third-party, self-hosted application. It is not affiliated with,
+endorsed by, or supported by Proton AG. It is built on Proton's official,
+open-source Drive SDK, and access to Proton's hosted services remains subject to
+Proton's own terms of service.
+
+## What does it actually do?
+
+Two things in the web UI today:
+
+1. **Two-way folder sync** — pair a NAS folder with a Proton Drive folder and
+   keep them mirrored. Additions, edits, and deletions on either side propagate
+   to the other.
+2. **Encrypted config backup/restore** — export everything needed to move or
+   rebuild the app (folder pairs, Proton session, encryption key) to an
+   encrypted `.pdnbak` file, then restore it on a new machine without
+   re-signing in.
+
+(The codebase also has one-way backup and restore engines built on the same
+primitives; the polished web UI is sync-first.)
+
+---
+
+## Design choices — the UI
+
+- **One container, one surface.** The React frontend is built and served by the
+  same Node backend that runs the sync engine. One image, one port, nothing else
+  to host.
+- **Un-branded and honest.** No Proton branding — it's explicitly third-party —
+  with a disclaimer on the login screen.
+- **Two-column dashboard.** Live sync activity and progress on the left; storage
+  usage and folder pairs on the right. Everything you need to see is on one
+  screen.
+- **Actions live in modals.** Creating a pair, the duplicate scan, logs, and the
+  trash are pop-up overlays. The top bar holds only the global controls
+  (Pause/Resume, Stop, Create pair, Logs, Settings, Sign out).
+- **Themeable.** Light and dark modes driven by CSS variables, so the whole UI
+  switches consistently.
+- **Safety-first controls.** No destructive action sits one mis-click away:
+  dedupe keeps everything unless you explicitly uncheck copies, there is no
+  "remove all", ignored duplicates are "Reset" (not "Remove"), the deletion
+  tripwire shows a confirmation card, and low Drive space surfaces as a
+  progressively redder storage bar.
+
+## Design choices — the backend
+
+- **TypeScript on Node.js (≥ 26).** ESM, single process, SQLite for state.
+- **Layered, with crypto fenced at the bottom.** Web UI → REST API → app core
+  (sync engine + scheduler + state) → a crypto abstraction → auth/session →
+  the Proton Drive SDK. Each layer only talks to the one below it.
+- **The SDK is not auth, and it has no sync module.** Proton's official SDK is a
+  Drive *client* (list/upload/download/move/trash). Authentication, session
+  management, and the sync engine are all built here, on top of the SDK's
+  primitives.
+- **A local state DB because the SDK can't "search by path".** The SDK addresses
+  nodes by link ID, not path, so the app keeps a SQLite mapping of
+  `NAS path → Drive link ID → content fingerprint`. That mapping is what makes
+  change detection and resume fast.
+- **Two mounted volumes.** `/config` (state DB, encrypted session, pair config)
+  and `/data` (the synced tree). Updating the container never loses state.
+- **Polling, not push.** Proton Drive exposes no webhook for remote changes, so
+  the scheduler polls on the configured interval.
+
+---
+
+## How does authentication work?
+
+Proton's SDK deliberately ships **without** login or session management, so the
+app implements it:
+
+- **Login** — a Secure Remote Password (SRP-6a) handshake against Proton's auth
+  API. SRP means your password is never sent to Proton in the clear.
+- **2FA** — an optional TOTP code, supported in the login flow.
+- **Two-password mode** — if the account has a separate mailbox password, the
+  app uses it to derive the key passphrase and unlock the account keyrings.
+- **Session resume** — after login, only the *session* is persisted (refresh
+  token + salted key passphrase) in an **AES-256-GCM encrypted blob**, keyed from
+  a Docker secret/keyfile (or `PDN_ENCRYPTION_KEY`). The raw login, 2FA, and
+  mailbox passwords exist in memory only during sign-in and are never written to
+  disk.
+- **Optional app password** — a second, self-hosted layer on top of Proton
+  sign-in. It gates the dashboard, the API, and the live event stream, and is
+  stored only as a scrypt hash (never plaintext). It also protects the config
+  backup.
+
+### Is my data readable by the app or server?
+
+The app *must* be able to read the files it syncs — that is inherent to a sync
+tool, and during a session it holds your Proton keys to do the decrypt/encrypt.
+What it does **not** do: it stores no file *contents* locally (only paths and
+content hashes in the state DB), it sends data only to Proton's servers
+(encrypted with Proton's key model), and your Proton credentials are never kept
+in plaintext. The one thing to protect carefully is the `/config` volume —
+treat it like your credentials, because the encrypted session blob lives there.
+
+---
+
+## How will the app handle Proton's upcoming crypto change?
+
+Proton Drive is moving to a new cryptographic model around the end of 2026 /
+early 2027, and clients that only speak the old model will stop interoperating
+until they upgrade.
+
+The app is built for exactly this. All cryptographic work is fenced behind a
+single **`CryptoBackend` interface** (the file-encryption module, the keyring
+proxy, and the SRP primitives), and only two small modules — `auth` and `crypto`
+— touch crypto directly. The sync, backup, and restore engines and the entire UI
+never call crypto.
+
+So when Proton flips models, the change is: bump the SDK dependency, add one new
+backend implementation, and select it at startup. The engines and UI don't
+change. The SDK's changelog is the trigger that tells us the swap is due.
+
+---
+
+## How does the sync engine work?
+
+Each folder pair is a three-way reconcile, run on a schedule:
+
+1. **Walk** both trees — the local NAS folder and the Proton Drive folder —
+   using the SDK's listing calls.
+2. **Compare against state** — for every path, diff what's local vs. what's on
+   Drive vs. what the state DB last recorded, and compute the minimal operation
+   (add / modify / delete / rename).
+3. **Transfer** — upload or download only the files that changed, in parallel
+   (see below).
+4. **Record** — write the new fingerprints back to the state DB so the next
+   cycle skips unchanged files without re-hashing or re-transferring.
+
+### How does it detect changes without re-downloading everything?
+
+- **Local side** — a file's size + mtime are compared first; if they match the
+  stored record, the stored content hash is reused and no re-hash happens. Only
+  when size or mtime changes is the file re-hashed.
+- **Drive side** — the SDK reports a content fingerprint (SHA-1 + size) for each
+  file, which is compared against the stored one.
+
+### What happens on a conflict?
+
+If both sides changed the same file since the last sync, the app keeps the
+**local** copy and preserves the **Drive** version alongside it as
+`filename.conflict-<timestamp>`. Nothing is silently overwritten or lost.
+
+### What protects against accidental mass deletion?
+
+Three independent barriers, applied in both directions:
+
+1. **Source-availability gate** — if a source folder is missing/unreadable (an
+   unmounted NAS share, a dropped Drive connection), the cycle halts as
+   "source unavailable" instead of treating it as "everything was deleted".
+2. **Deletion-rate tripwire** — if one cycle computes more than **25%** of a
+   pair's files as deletions, it pauses and shows a confirmation card with the
+   exact count and file breakdown before doing anything.
+3. **Trash-before-delete** — the sync engine only ever soft-deletes: Drive files
+   go to Proton Drive's trash, local files go to a hidden `.pdn-trash` folder.
+   Permanent delete is a separate, explicit action.
+
+### What happens if one file fails?
+
+Skip-on-error. A single failed hash/upload/download is logged and skipped; the
+rest of the sync continues. The failed file is retried on the next cycle.
+
+---
+
+## How did you speed up initial syncs and file transfers?
+
+Four concurrency changes, each targeting a different bottleneck:
+
+1. **Parallelized the Drive walk.** Listing used to happen one folder at a time
+   (a network round-trip each). It now runs ~8 concurrent listing calls, which
+   collapsed the "stuck on Syncing" phase on large trees.
+2. **Hash each file once.** Change detection and upload both used to hash the
+   same file separately; the computed hash is now passed through to the upload,
+   halving hashing work on a first sync.
+3. **Multi-threaded crypto.** OpenPGP decrypt of node metadata is CPU-bound and
+   was single-threaded. It now runs in a pool of worker threads (one per CPU
+   core, capped at 8), spreading up to 30 concurrent decrypts across the cores.
+4. **Parallel file transfers.** Transfers are now bounded-concurrency
+   (default **3**, max **4**, adjustable **1–4** in Settings). 1 = sequential;
+   higher values overlap uploads/downloads so the wire stays busy while other
+   files hash.
+
+The overall progress bar was reworked to sum *in-flight* bytes, so the percent
+and speed read correctly even with several files transferring at once.
+
+---
+
+## What are the limitations?
+
+Be aware of these before relying on it:
+
+- **Beta.** Milestones M0–M6 are complete and it's in daily use, but treat it as
+  beta — test against a throwaway Proton account first.
+- **Not real-time.** There is no push/webhook from Proton, so sync is
+  poll-based; the shortest interval is 1 minute.
+- **Whole-file transfer.** A changed file is re-transferred in full — there is
+  no block-level (rsync-style) delta.
+- **One account per instance.** A container syncs a single Proton account.
+- **No automatic permanent delete.** The sync loop only soft-deletes; emptying
+  trash is a manual step.
+- **No file version history.** Sync mirrors the *current* state; the trash is
+  the recovery path, not snapshots.
+- **No automatic conflict merge.** Conflicts keep both copies (local wins, the
+  other saved as `.conflict-<ts>`); there is no content merge.
+- **Dedupe is per-pair and local-only.** It finds duplicates within one pair's
+  local folder, on demand — not across pairs, and not on the Drive side.
+- **"Monthly" means ~30 days**, a fixed interval, not a calendar month.
+- **Human verification is manual.** Proton's CAPTCHA challenge (rare, usually
+  one-time per account) requires a one-off browser step.
+- **Requires Docker.** Runs as a container with `/config` and `/data` mounts.
+
+---
+
+## Other common questions
+
+### Does it delete anything permanently?
+
+Not automatically. The sync engine only trashes (Drive) and recycles (local).
+Permanent deletion is a separate, explicit action you take in the Trash view.
+
+### Does it run on my NAS?
+
+Any NAS that runs Docker (TrueNAS, Synology, QNAP, Unraid, etc.). The image is
+built for `amd64` today; `arm64` is planned for the public release — the code is
+already architecture-clean, so it's a build/publish step, not a rewrite.
+
+### What if I hit my Proton Drive quota?
+
+Uploads that would exceed quota fail that file, are logged, and are retried on
+the next cycle. The dashboard shows your usage and warns you at 80% (amber) and
+90% (red) so you catch it before it bites.
+
+### What if I get "too many logins" (429)?
+
+That's Proton's rate limiter, not a bug. It self-clears in minutes. Space out
+logins, or just let the persisted session resume instead of signing in again.
+
+### Is this a backup tool or a sync tool?
+
+It's primarily a **sync** tool — a two-way mirror. A one-way backup is "upload
+new/changed files and never delete", whereas sync also propagates deletions.
+The app's own **config backup** (`.pdnbak`) is a separate thing: an encrypted
+snapshot of your *setup* (pairs + session + key), not your files.
+
+### Can I use more than one account?
+
+Run one container instance per Proton account. A single instance is tied to one
+account's session.
+
+### How do I move to a new NAS?
+
+Two options: restore from an encrypted `.pdnbak` config backup (pairs + session +
+key), and/or copy the `/config` and `/data` volumes to the new host. Because the
+state DB carries the per-file fingerprints, a move won't trip the deletion
+safeguard or force a full re-upload.

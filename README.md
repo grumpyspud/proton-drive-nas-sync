@@ -49,6 +49,7 @@ docker compose up -d
 Open `http://localhost:8787`, sign in, and add a folder pair. For a step-by-step
 walkthrough with screenshots, see [docs/SETUP.md](docs/SETUP.md). For a reference
 of every feature and option, see [docs/USER_GUIDE.md](docs/USER_GUIDE.md). For
+common questions and design rationale, see [docs/FAQ.md](docs/FAQ.md). For
 full deployment instructions and configuration reference,
 see [docs/DEPLOY.md](docs/DEPLOY.md).
 
