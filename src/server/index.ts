@@ -460,13 +460,14 @@ function isSystemMountPoint(mp: string): boolean {
 }
 
 /**
- * Data volumes = /data (always) plus any other non-system, non-pseudo filesystem
- * mount bind-mounted into the container (e.g. extra NAS shares). /config and the
- * container's own overlay/root are excluded.
+ * Data volumes = every non-system, non-pseudo filesystem bind-mounted into the
+ * container (e.g. /data, or NAS shares under /data/<name>). /config and the
+ * container's own overlay/root are excluded. Falls back to /data if no mounts
+ * are detected.
  */
 async function localVolumes(): Promise<LocalVolume[]> {
-    const paths: string[] = ['/data'];
-    const seen = new Set<string>(['/data']);
+    const paths: string[] = [];
+    const seen = new Set<string>();
     try {
         const lines = readFileSync('/proc/self/mountinfo', 'utf8').split('\n');
         for (const line of lines) {
@@ -479,7 +480,7 @@ async function localVolumes(): Promise<LocalVolume[]> {
             const mountField = parts[4];
             if (!mountField) continue;
             const mountPoint = unescapeMountField(mountField);
-            if (!mountPoint || mountPoint === '/data') continue;
+            if (!mountPoint) continue;
             if (isSystemMountPoint(mountPoint)) continue;
             if (seen.has(mountPoint)) continue;
             seen.add(mountPoint);
@@ -488,6 +489,7 @@ async function localVolumes(): Promise<LocalVolume[]> {
     } catch {
         /* /proc/self/mountinfo unavailable — fall back to /data only */
     }
+    if (paths.length === 0) paths.push('/data');
     const volumes: LocalVolume[] = [];
     for (const p of paths) {
         try {

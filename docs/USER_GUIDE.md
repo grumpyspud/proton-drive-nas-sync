@@ -150,9 +150,10 @@ Several guards prevent a mistake from wiping data:
 ## Local storage
 
 The **Local storage** card sits above the **Proton Drive Storage** card and shows
-every data volume mounted into the container — `/data` plus any other bind mounts
-you've added — with per-volume used/total and a fill bar. The container's own
-storage and `/config` are excluded automatically.
+every data volume bind-mounted into the container (for example a single `/data`,
+or separate `/data/photos` and `/data/documents` shares), with per-volume
+used/total and a fill bar. The container's own storage and `/config` are excluded
+automatically.
 
 ## Proton Drive Storage
 
