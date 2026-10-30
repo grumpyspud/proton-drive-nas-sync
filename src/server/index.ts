@@ -680,7 +680,7 @@ app.get('/api/pairs/:id/duplicates/ignored', requireAuth, (req, res) => {
     }
     const db = new SyncDB(syncDbPath());
     try {
-        res.json({ ignored: [...db.ignoredPaths(pair.id)].sort() });
+        res.json({ groups: db.ignoredGroups(pair.id) });
     } finally {
         db.close();
     }

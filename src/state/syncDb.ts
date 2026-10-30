@@ -273,6 +273,38 @@ export class SyncDB {
     }
 
     /**
+     * Ignored relPaths grouped by content hash, so a duplicate group of N files is
+     * listed (and un-ignored) as one unit. Paths whose node no longer resolves (or
+     * has no hash) become single-file groups with a null sha1.
+     */
+    ignoredGroups(pairId: string): Array<{ sha1: string | null; size: number | null; files: string[] }> {
+        const rows = this.db
+            .prepare(
+                `SELECT i.rel_path AS rel_path, n.local_sha1 AS sha1, n.local_size AS size
+                 FROM dupe_ignored i
+                 LEFT JOIN nodes n ON n.pair_id = i.pair_id AND n.rel_path = i.rel_path
+                 WHERE i.pair_id = ?`,
+            )
+            .all(pairId) as unknown as Array<{ rel_path: string; sha1: string | null; size: number | null }>;
+
+        const map = new Map<string, { sha1: string | null; size: number | null; files: string[] }>();
+        for (const r of rows) {
+            const key = r.sha1 ?? `orphan:${r.rel_path}`;
+            let g = map.get(key);
+            if (!g) {
+                g = { sha1: r.sha1, size: r.size, files: [] };
+                map.set(key, g);
+            }
+            g.files.push(r.rel_path);
+        }
+
+        const out = [...map.values()];
+        for (const g of out) g.files.sort((a, b) => a.localeCompare(b));
+        out.sort((a, b) => (b.size ?? 0) - (a.size ?? 0) || (a.files[0] ?? '').localeCompare(b.files[0] ?? ''));
+        return out;
+    }
+
+    /**
      * Group file nodes by content (sha1 + size), returning only groups with 2+
      * files. Excludes 0-byte files (always) and files below `minBytes`, plus any
      * relPath on the pair's ignore list.

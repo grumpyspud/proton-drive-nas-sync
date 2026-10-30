@@ -118,3 +118,9 @@ export interface DuplicateGroup {
     size: number;
     files: DuplicateFile[];
 }
+
+export interface IgnoredGroup {
+    sha1: string | null;
+    size: number | null;
+    files: string[];
+}

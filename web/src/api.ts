@@ -1,4 +1,4 @@
-import type { DirListing, DuplicateGroup, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
+import type { DirListing, DuplicateGroup, IgnoredGroup, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
 
 function getDeviceId(): string {
     try {
@@ -201,7 +201,7 @@ export function ignoreDuplicates(id: string, relPaths: string[]): Promise<{ ok: 
     return request(`/api/pairs/${encodeURIComponent(id)}/duplicates/ignore`, { method: 'POST', body: JSON.stringify({ relPaths }) });
 }
 
-export function listIgnored(id: string): Promise<{ ignored: string[] }> {
+export function listIgnored(id: string): Promise<{ groups: IgnoredGroup[] }> {
     return request(`/api/pairs/${encodeURIComponent(id)}/duplicates/ignored`);
 }
 

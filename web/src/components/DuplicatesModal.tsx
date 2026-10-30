@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getDuplicates, ignoreDuplicates, listIgnored, recycleDuplicates, resetIgnored, unignoreDuplicates } from '../api';
-import type { DuplicateGroup, Pair } from '../types';
+import type { DuplicateGroup, IgnoredGroup, Pair } from '../types';
 import { formatBytes } from '../format';
 
 const DEDUPE_MIN_OPTIONS: Array<{ label: string; value: number }> = [
@@ -34,11 +34,11 @@ export function DuplicatesModal({ pair, onClose }: Props) {
     const [notice, setNotice] = useState<string | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
     const [keep, setKeep] = useState<Record<string, boolean>>({});
-    const [ignored, setIgnored] = useState<string[]>([]);
+    const [ignored, setIgnored] = useState<IgnoredGroup[]>([]);
 
     async function loadIgnored() {
         try {
-            setIgnored((await listIgnored(pair.id)).ignored);
+            setIgnored((await listIgnored(pair.id)).groups);
         } catch {
             // non-fatal — the ignore list is best-effort
         }
@@ -202,7 +202,7 @@ export function DuplicatesModal({ pair, onClose }: Props) {
 
                 <div className="dupe-ignored">
                     <div className="dupe-ignored-head">
-                        <h3>Ignored files{ignored.length > 0 ? ` (${ignored.length})` : ''}</h3>
+                        <h3>Ignored files{ignored.length > 0 ? ` (${ignored.reduce((n, g) => n + g.files.length, 0)})` : ''}</h3>
                         {ignored.length > 0 && (
                             <button className="btn btn-ghost btn-sm" onClick={() => void resetAllIgnored()}>
                                 Reset all
@@ -213,10 +213,18 @@ export function DuplicatesModal({ pair, onClose }: Props) {
                         <div className="muted">No files are currently ignored for this folder.</div>
                     ) : (
                         <ul className="dupe-ignored-list">
-                            {ignored.map((rp) => (
-                                <li key={rp} className="dupe-ignored-item">
-                                    <span className="dupe-path">{rp}</span>
-                                    <button className="btn btn-ghost btn-sm" onClick={() => void unignore([rp])}>
+                            {ignored.map((g) => (
+                                <li key={g.sha1 ?? g.files[0]} className="dupe-ignored-item">
+                                    <div className="dupe-ignored-info">
+                                        <span className="dupe-ignored-meta">
+                                            {g.files.length} file{g.files.length === 1 ? '' : 's'}
+                                            {g.size != null && ` · ${formatBytes(g.size)} each`}
+                                        </span>
+                                        {g.files.map((rp) => (
+                                            <span key={rp} className="dupe-path">{rp}</span>
+                                        ))}
+                                    </div>
+                                    <button className="btn btn-ghost btn-sm" onClick={() => void unignore(g.files)}>
                                         Remove
                                     </button>
                                 </li>
