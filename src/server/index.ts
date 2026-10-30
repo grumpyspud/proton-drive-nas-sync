@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { statfs } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configDir, loadMasterKey } from '../crypto/keySource';
@@ -113,6 +114,7 @@ function clampDedupeMinBytes(value: unknown): number {
 let syncing = false;
 let paused = false;
 let stopRequested = false;
+let followUpPairId: string | null = null;
 
 interface PendingDeletion {
     pairId: string;
@@ -134,6 +136,12 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
     try {
         const pair = db.getPair(pairId);
         if (!pair) return false;
+
+        // Detect the pair's first successful sync so we can queue one follow-up
+        // pass afterwards (it populates local content hashes for files pulled down
+        // from Drive — which dedupe needs — and catches drift accumulated during
+        // a long initial sync).
+        const firstSync = pair.lastSyncAt == null;
 
         const session = authService.getSession();
         // Re-resolve the Drive folder each cycle (robust against renames/recreates).
@@ -157,6 +165,7 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
         });
         db.markSynced(pairId);
         broadcast({ type: 'sync-complete', pairId, summary });
+        if (firstSync) followUpPairId = pairId;
         return true;
     } catch (error) {
         if (error instanceof SyncAbortedError) {
@@ -176,6 +185,14 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
         syncing = false;
         stopRequested = false;
         db.close();
+        const followUp = followUpPairId;
+        followUpPairId = null;
+        if (followUp) {
+            broadcast({ type: 'log', message: 'Initial sync complete — running a follow-up sync to populate dedupe data and catch any changes made during the initial pass.' });
+            setImmediate(() => {
+                void runSync(followUp);
+            });
+        }
     }
 }
 
@@ -390,6 +407,87 @@ app.get('/api/storage', requireAuth, async (_req, res) => {
         });
     } catch (error) {
         res.status(502).json({ error: (error as Error).message ?? 'Failed to fetch storage' });
+    }
+});
+
+// ---- local (NAS) storage usage: /data + any other mounted data volumes ----
+
+interface LocalVolume {
+    path: string;
+    totalBytes: number;
+    usedBytes: number;
+    freeBytes: number;
+}
+
+// Pseudo/virtual filesystems we never want to surface as "storage".
+const PSEUDO_FS = new Set([
+    'proc', 'sysfs', 'devtmpfs', 'devpts', 'tmpfs', 'cgroup', 'cgroup2',
+    'mqueue', 'shm', 'autofs', 'nsfs', 'overlay', 'squashfs', 'debugfs',
+    'tracefs', 'securityfs', 'pstore', 'hugetlbfs', 'configfs', 'binfmt_misc',
+    'fusectl', 'efivarfs', 'ramfs',
+]);
+
+// Paths that belong to the container / app, not the user's NAS data.
+const SYSTEM_MOUNT_PREFIXES = ['/proc', '/sys', '/dev', '/run', '/etc', '/var', '/usr', '/lib', '/bin', '/sbin', '/tmp', '/root', '/home', '/opt', '/app'];
+
+function unescapeMountField(s: string): string {
+    return s.replace(/\\([0-7]{3})/g, (_, oct: string) => String.fromCharCode(parseInt(oct, 8)));
+}
+
+function isSystemMountPoint(mp: string): boolean {
+    if (mp === '/' || mp === '/config') return true;
+    return SYSTEM_MOUNT_PREFIXES.some((p) => mp === p || mp.startsWith(`${p}/`));
+}
+
+/**
+ * Data volumes = /data (always) plus any other non-system, non-pseudo filesystem
+ * mount bind-mounted into the container (e.g. extra NAS shares). /config and the
+ * container's own overlay/root are excluded.
+ */
+async function localVolumes(): Promise<LocalVolume[]> {
+    const paths: string[] = ['/data'];
+    const seen = new Set<string>(['/data']);
+    try {
+        const lines = readFileSync('/proc/self/mountinfo', 'utf8').split('\n');
+        for (const line of lines) {
+            if (!line) continue;
+            const parts = line.split(' ');
+            const sep = parts.indexOf('-');
+            if (sep < 0 || sep + 1 >= parts.length) continue;
+            const fstype = parts[sep + 1];
+            if (!fstype || PSEUDO_FS.has(fstype)) continue;
+            const mountField = parts[4];
+            if (!mountField) continue;
+            const mountPoint = unescapeMountField(mountField);
+            if (!mountPoint || mountPoint === '/data') continue;
+            if (isSystemMountPoint(mountPoint)) continue;
+            if (seen.has(mountPoint)) continue;
+            seen.add(mountPoint);
+            paths.push(mountPoint);
+        }
+    } catch {
+        /* /proc/self/mountinfo unavailable — fall back to /data only */
+    }
+    const volumes: LocalVolume[] = [];
+    for (const p of paths) {
+        try {
+            const st = await statfs(p);
+            const total = st.blocks * st.bsize;
+            if (total <= 0) continue;
+            const free = st.bfree * st.bsize;
+            volumes.push({ path: p, totalBytes: total, usedBytes: total - free, freeBytes: st.bavail * st.bsize });
+        } catch {
+            /* skip paths that aren't a real mount point or vanished */
+        }
+    }
+    return volumes;
+}
+
+app.get('/api/storage/local', requireAuth, async (_req, res) => {
+    try {
+        res.json({ volumes: await localVolumes() });
+    } catch (error) {
+        res.status(502).json({ error: (error as Error).message ?? 'Failed to read local storage' });
     }
 });
 

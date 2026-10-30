@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getSettings, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
-import type { DeletionHold, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
+import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getLocalStorage, getSettings, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
+import type { DeletionHold, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { LogsModal } from './LogsModal';
@@ -31,6 +31,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [summary, setSummary] = useState<SyncSummary | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [storage, setStorage] = useState<StorageInfo | null>(null);
+    const [localVolumes, setLocalVolumes] = useState<LocalVolume[]>([]);
     const [trashPair, setTrashPair] = useState<Pair | null>(null);
     const [paused, setPaused] = useState(false);
     const [showLogs, setShowLogs] = useState(false);
@@ -62,6 +63,14 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         }
     }, []);
 
+    const loadLocalStorage = useCallback(async () => {
+        try {
+            setLocalVolumes((await getLocalStorage()).volumes);
+        } catch {
+            /* non-critical */
+        }
+    }, []);
+
     const loadSyncStatus = useCallback(async () => {
         try {
             setPaused((await getSyncStatus()).paused);
@@ -81,9 +90,10 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     useEffect(() => {
         void reload();
         void loadStorage();
+        void loadLocalStorage();
         void loadSyncStatus();
         void loadSettings();
-    }, [reload, loadStorage, loadSyncStatus, loadSettings]);
+    }, [reload, loadStorage, loadLocalStorage, loadSyncStatus, loadSettings]);
 
     useEffect(() => {
         const es = new EventSource('/api/events');
@@ -164,6 +174,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     setActive(new Map());
                     setOverall(null);
                     void loadStorage();
+                    void loadLocalStorage();
                     break;
                 case 'sync-error':
                     setSyncing(false);
@@ -215,7 +226,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         };
         es.onerror = () => setReconnecting(true);
         return () => es.close();
-    }, [reload, loadStorage, loadSyncStatus]);
+    }, [reload, loadStorage, loadLocalStorage, loadSyncStatus]);
 
     // Close any open header dropdown when the user clicks outside it.
     useEffect(() => {
@@ -460,6 +471,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                 </section>
 
                 <section className="col col-side">
+                    {localVolumes.length > 0 && <LocalStorageCard volumes={localVolumes} />}
                     {storage && <StorageCard storage={storage} />}
                     <div className="card">
                         <h2>Folder pairs</h2>
@@ -606,6 +618,31 @@ function Stat({ label, value }: { label: string; value: number }) {
         <div className="stat">
             <div className="stat-value">{value}</div>
             <div className="stat-label">{label}</div>
+        </div>
+    );
+}
+
+function LocalStorageCard({ volumes }: { volumes: LocalVolume[] }) {
+    return (
+        <div className="card">
+            <h2>Local storage</h2>
+            {volumes.map((v) => {
+                const pct = v.totalBytes > 0 ? Math.min(100, (v.usedBytes / v.totalBytes) * 100) : 0;
+                return (
+                    <div key={v.path} className="storage-vol">
+                        <div className="storage-path">{v.path}</div>
+                        <div className="storage-head">
+                            <span className="storage-nums">
+                                {formatBytes(v.usedBytes)} <span className="muted">of</span> {formatBytes(v.totalBytes)}
+                            </span>
+                            <span className="pct">{pct.toFixed(1)}%</span>
+                        </div>
+                        <div className="progress-track">
+                            <div className="progress-fill fill-upload" style={{ width: `${pct}%` }} />
+                        </div>
+                    </div>
+                );
+            })}
         </div>
     );
 }

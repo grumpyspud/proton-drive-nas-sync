@@ -1,4 +1,4 @@
-import type { DirListing, DuplicateGroup, IgnoredGroup, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
+import type { DirListing, DuplicateGroup, IgnoredGroup, LocalVolume, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
 
 function getDeviceId(): string {
     try {
@@ -151,6 +151,10 @@ export function getLogs(q: string, limit: number, offset: number): Promise<LogQu
 
 export function getStorage(): Promise<StorageInfo> {
     return request<StorageInfo>('/api/storage');
+}
+
+export function getLocalStorage(): Promise<{ volumes: LocalVolume[] }> {
+    return request<{ volumes: LocalVolume[] }>('/api/storage/local');
 }
 
 export interface SyncSettings {

@@ -88,6 +88,13 @@ export interface StorageInfo {
     displayName: string;
 }
 
+export interface LocalVolume {
+    path: string;
+    totalBytes: number;
+    usedBytes: number;
+    freeBytes: number;
+}
+
 export interface DirFolder {
     name: string;
     path: string;
