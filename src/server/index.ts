@@ -2,10 +2,13 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { statfs } from 'node:fs/promises';
+import { createServer as createHttpServer } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configDir, loadMasterKey } from '../crypto/keySource';
 import { listLocalDir, mkdirLocal } from '../fs/browse';
+import { resolveTls, type TlsConfig } from './tls';
 import { findFolder, findOrCreateFolderPath } from '../fs/folders';
 import { nodeName } from '../fs/files';
 import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
@@ -1187,4 +1190,18 @@ setInterval(() => {
 }, REAL_TIME_INTERVAL_MS);
 
 const PORT = parseInt(process.env.PDN_PORT ?? '8787', 10);
-app.listen(PORT, () => logger.info(`proton-drive-nas-sync server listening on http://0.0.0.0:${PORT}`));
+void (async () => {
+    let tls: TlsConfig;
+    try {
+        tls = await resolveTls();
+    } catch (error) {
+        logger.error(`TLS configuration error: ${(error as Error).message}`);
+        process.exit(1);
+    }
+    const server = tls.mode === 'https'
+        ? createHttpsServer({ key: tls.key, cert: tls.cert }, app)
+        : createHttpServer(app);
+    const protocol = tls.mode === 'https' ? 'https' : 'http';
+    const certNote = tls.source === 'self-signed' ? ' (self-signed cert)' : tls.source === 'provided' ? ' (provided cert)' : '';
+    server.listen(PORT, () => logger.info(`proton-drive-nas-sync server listening on ${protocol}://0.0.0.0:${PORT}${certNote}`));
+})();

@@ -41,8 +41,9 @@ or token that has read access.)
 docker compose up -d
 ```
 
-Then open `http://<host>:8787`, log in with your Proton credentials (2FA and a
-second-tier mailbox password are supported), and create a folder pair.
+Then open `https://<host>:8787`, log in with your Proton credentials (2FA and a
+second-tier mailbox password are supported), and create a folder pair. (The UI
+serves HTTPS by default — see [HTTPS](#https).)
 
 ### Example compose override for a NAS
 
@@ -95,9 +96,33 @@ are never written to disk. On restart the app resumes the session automatically.
 | `PDN_CONFIG_DIR` | `/config` | Where the session blob + sync DB live. |
 | `PDN_ENCRYPTION_KEY` | *(auto-provision)* | 64-hex-char (32-byte) key encrypting the session blob. Generate with `openssl rand -hex 32`. |
 | `PDN_PORT` | `8787` | Listen port (change the compose `ports` mapping to match). |
+| `PDN_TLS_CERT` | *(auto self-signed)* | Path to a PEM TLS certificate (use with `PDN_TLS_KEY`) to serve HTTPS with your own cert. |
+| `PDN_TLS_KEY` | *(auto self-signed)* | Path to the matching PEM TLS private key. |
+| `PDN_HTTP` | `false` | Set to `true` to serve plain HTTP instead (e.g. behind a reverse proxy that terminates TLS). |
 | `PDN_STATE_DB` | `<config>/sync.db` | Override the sync database path. |
 | `PDN_WEB_DIR` | `<app>/web/dist` | Override the static frontend directory. |
 | `PROTON_DRIVE_BASE_URL` | `drive-api.proton.me` | Custom API endpoint (rarely needed). |
+
+## HTTPS
+
+The web UI serves **HTTPS** by default with a self-signed certificate generated on
+first boot and cached in `/config` (`selfsigned.crt` + `selfsigned.key`). This
+encrypts the browser ↔ app link (including the Proton login) out of the box.
+
+A self-signed certificate makes your browser show a "not secure" warning the first
+time you connect — accept it to proceed. To serve HTTPS without the warning,
+provide your own certificate:
+
+```yaml
+    environment:
+      PDN_TLS_CERT: /config/certs/fullchain.pem
+      PDN_TLS_KEY: /config/certs/privkey.pem
+    volumes:
+      - /path/to/certs:/config/certs:ro
+```
+
+To run plain HTTP instead (for example behind a reverse proxy or Tailscale that
+already terminates TLS), set `PDN_HTTP: "true"`.
 
 ## Security
 

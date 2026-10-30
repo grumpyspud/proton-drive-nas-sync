@@ -33,8 +33,10 @@ docker build -t proton-drive-nas-sync:latest .
 docker compose up -d
 ```
 
-Then open `http://<host>:8787`. On first load you'll land on the Proton sign-in
-screen.
+Then open `https://<host>:8787`. On first load you'll land on the Proton sign-in
+screen. The UI serves HTTPS with a self-signed certificate by default, so your
+browser will warn "not secure" the first time — accept it to continue (or see
+[DEPLOY.md](DEPLOY.md) to provide your own certificate or disable TLS).
 
 The container needs two persistent paths:
 
