@@ -47,10 +47,11 @@ in. (That's a snapshot of your *setup*, not your files.)
 - **Themeable.** Light and dark modes driven by CSS variables, so the whole UI
   switches consistently.
 - **Safety-first controls.** No destructive action sits one mis-click away:
-  dedupe keeps everything unless you explicitly uncheck copies, there is no
-  "remove all", ignored duplicates are "Reset" (not "Remove"), the deletion
-  tripwire shows a confirmation card, and low Drive space surfaces as a
-  progressively redder storage bar.
+  dedupe only trashes files you don't select to keep, you have to manually
+  delete any trashed file from the sync pair's trash, the deletion tripwire
+  shows a confirmation before massive deletions happen, low Drive space
+  warnings so you know before a failed backup happens because of an
+  out-of-space error.
 
 ## Design choices — the backend
 
