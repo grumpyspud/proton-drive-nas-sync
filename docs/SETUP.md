@@ -146,7 +146,7 @@ The top bar holds the global controls:
 - **⏸ Pause / ▶ Resume** — pause or resume all syncing.
 - **⏹ Stop** (shown only while syncing) — stop the current sync.
 - **＋ Create Sync Pair** — add a folder pair.
-- **Logs ▾** — open the **Sync log** or **Activity log** (see
+- **Logs ▾** — open the **Sync log**, **Activity log**, or **Error log** (see
   [step 13](#13-viewing-logs)).
 - **⚙ Settings** — **💾 Backup**, **🔒 App password**, **🔐 Lock**,
   **☀ Light / 🌙 Dark**, and **Max concurrent transfers**.
@@ -229,7 +229,7 @@ To restore:
 
 ## 13. Viewing logs
 
-The **Logs ▾** menu has two views:
+The **Logs ▾** menu has three views:
 
 - **Sync log** — the full, searchable, downloadable server log (the persistent log
   written at `/config/sync.log`):
@@ -240,6 +240,24 @@ The **Logs ▾** menu has two views:
   (capped at 200 events), shown in the browser:
 
   ![Activity log](screenshots/17-activity-log.png)
+
+- **Error log** — a separate, persistent log of **errors**, **conflicts**, and
+  **warnings** only:
+
+  ![Error log](screenshots/21-error-log.png)
+
+The **Logs ▾** button itself is a live indicator: it turns **red** when there are
+new (unseen) errors, or **yellow** for new warnings/conflicts. Open **Logs ▾ →
+Error log** to review them — entries are colour-coded by severity (**error** red,
+**conflict** orange, **warning** yellow). Three actions sit at the top:
+
+- **Reset** — mark the current entries as seen (clears the button back to normal).
+- **Clear** — delete every entry.
+- **Save** — download the whole log as a `.txt` file.
+
+The error log exists because the main sync log is rotated once it grows large, so
+an early problem on a long sync could scroll away. Errors, conflicts, and warnings
+are written here as well, so they're never lost.
 
 ---
 
