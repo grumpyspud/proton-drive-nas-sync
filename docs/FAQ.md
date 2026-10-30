@@ -7,7 +7,12 @@
 
 ## Why was this app made?
 
-> **[Jon — your answer goes here: the motivation / backstory.]**
+I have a 2 TB Proton Drive account I use for both work and personal files. I
+didn't want to keep a full 2 TB drive in every system I use, or install the
+Proton Drive client on each one — and several of them run Linux, where Proton
+still hasn't shipped a client. With this, I back up to my NAS like normal, and
+the app handles the Proton Drive side for me. Simple, easy. Because it runs in
+Docker, it can even serve as a Linux/Windows/macOS client if you want.
 
 ---
 
