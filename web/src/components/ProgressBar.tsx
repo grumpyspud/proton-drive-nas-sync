@@ -1,4 +1,4 @@
-import { formatBytes, formatSpeed } from '../format';
+import { formatBytes } from '../format';
 import type { TransferDirection } from '../types';
 
 interface Props {
@@ -7,10 +7,9 @@ interface Props {
     bytes: number;
     total: number;
     percent: number;
-    speedBps: number;
 }
 
-export function ProgressBar({ relPath, direction, bytes, total, percent, speedBps }: Props) {
+export function ProgressBar({ relPath, direction, bytes, total, percent }: Props) {
     const pct = Math.max(0, Math.min(100, percent));
     return (
         <div className="transfer">
@@ -20,7 +19,7 @@ export function ProgressBar({ relPath, direction, bytes, total, percent, speedBp
                     {relPath}
                 </span>
                 <span className="transfer-meta">
-                    {formatBytes(bytes)} / {formatBytes(total)} · {formatSpeed(speedBps)}
+                    {formatBytes(bytes)} / {formatBytes(total)}
                 </span>
             </div>
             <div className="progress-track">

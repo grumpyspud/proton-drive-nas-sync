@@ -81,7 +81,7 @@ services:
 2. **Create Sync Pair** (top bar) — pick the local folder (absolute path under
    `/data`) and a Proton Drive folder, then choose **Manual** or an **Auto-sync**
    schedule.
-3. **Sync** — watch progress (% + speed) in real time.
+3. **Sync** — watch progress (files processed, bytes, network rate) in real time.
 
 For a full walkthrough with screenshots see [SETUP.md](SETUP.md); for a reference
 of every feature and option see [USER_GUIDE.md](USER_GUIDE.md).

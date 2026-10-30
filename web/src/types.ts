@@ -39,7 +39,7 @@ export type SyncProgressEvent =
     | { type: 'sync-start'; pairId: string; localDir: string; driveFolderName: string; followUp?: boolean }
     | { type: 'walk'; side: 'local' | 'drive'; files: number; folders: number }
     | { type: 'sync-plan'; totalBytes: number; totalFiles: number }
-    | { type: 'transfer'; relPath: string; direction: TransferDirection; bytes: number; total: number; percent: number; speedBps: number }
+    | { type: 'transfer'; relPath: string; direction: TransferDirection; bytes: number; total: number; percent: number }
     | { type: 'overall'; transferredBytes: number; totalBytes: number; percent: number; speedBps: number; filesDone: number; totalFiles: number }
     | { type: 'item'; action: SyncAction; relPath: string; message?: string }
     | { type: 'sync-complete'; pairId: string; summary: SyncSummary; followUp?: boolean }
@@ -58,7 +58,6 @@ export interface TransferState {
     bytes: number;
     total: number;
     percent: number;
-    speedBps: number;
 }
 
 export interface OverallState {

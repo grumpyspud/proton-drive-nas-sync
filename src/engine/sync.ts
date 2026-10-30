@@ -4,7 +4,8 @@ import type { ProtonDriveClient } from '@protontech/drive-sdk';
 import { downloadFile, sha1OfFile, uploadFile, uploadFileRevision } from '../fs/files';
 import type { TransferProgress } from '../fs/files';
 import type { SyncDB } from '../state/syncDb';
-import { SpeedMeter, type ProgressHandler } from './progress';
+import type { ProgressHandler } from './progress';
+import { NetRateMeter } from './netrate';
 import { assertSourceAvailable, checkDeletionTripwire, DeletionTripwireError } from './safety';
 import { drain } from './util';
 import { driveSize, walkDriveTree, walkLocalTree } from './walk';
@@ -87,8 +88,9 @@ function driveSha1(fingerprint: string | null | undefined): string {
  * deletion-rate tripwire — never a hard delete.
  *
  * Progress: emits `sync-start`, then per-item events and per-transfer
- * `transfer` events (cumulative bytes, percent, sliding-window speed). The
- * caller emits `sync-complete` (with the returned summary) or `sync-error`.
+ * `transfer` events (cumulative bytes, percent) plus `overall` events
+ * (files-processed percent + NIC-derived rate). The caller emits
+ * `sync-complete` (with the returned summary) or `sync-error`.
  */
 export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress, shouldAbort, progressMinBytes = DEFAULT_PROGRESS_MIN_BYTES, allowDeletions } = options;
@@ -97,12 +99,18 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         if (shouldAbort?.()) throw new SyncAbortedError();
     };
 
-    // Job-level progress tracking (overall % + speed across all files).
+    // Job-level progress tracking. `filesDone`/`totalFiles` count EVERY file the
+    // reconcile processes (uploads, downloads, conflicts, AND skipped/unchanged
+    // files), so a follow-up sync that is mostly "skips" still advances the bar.
+    // `completedBytes`/`totalBytes` are the actual DATA moved (0 during skips).
     let completedBytes = 0;
-    let completedFiles = 0;
+    let filesDone = 0;
     let totalBytes = 0;
     let totalFiles = 0;
-    const overallMeter = new SpeedMeter();
+    // Overall rate is sampled from the container's NIC counters (/proc/net/dev),
+    // not the backend's per-tick estimate — that spiked to "—"/"1.0 GB/s" because
+    // progress callbacks fire in bursts. The NIC counter is stable ground truth.
+    const netRate = new NetRateMeter();
     // Bytes in flight per relPath (parallel transfers), so the overall bar sums
     // ALL active transfers instead of only the most recently reported one.
     const inFlightBytes = new Map<string, number>();
@@ -114,7 +122,27 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     const finishTransfer = (relPath: string, size: number): void => {
         inFlightBytes.delete(relPath);
         completedBytes += size;
-        completedFiles++;
+    };
+    /** Emit the job-level `overall` event: files-processed percent + NIC rate.
+     *  Throttled to ~20/s so a fast skip/re-hash phase (thousands of unchanged
+     *  files) can't flood the SSE stream with one event per file. */
+    let lastOverallAt = 0;
+    const emitOverall = (): void => {
+        if (!onProgress) return;
+        const now = Date.now();
+        const isFinal = totalFiles > 0 && filesDone >= totalFiles;
+        if (!isFinal && now - lastOverallAt < 50) return;
+        lastOverallAt = now;
+        const jobBytes = completedBytes + sumInFlightBytes();
+        onProgress({
+            type: 'overall',
+            transferredBytes: jobBytes,
+            totalBytes,
+            percent: totalFiles > 0 ? Math.min(100, (filesDone / totalFiles) * 100) : 0,
+            speedBps: netRate.sample(),
+            filesDone,
+            totalFiles,
+        });
     };
 
     onProgress?.({ type: 'sync-start', pairId, localDir, driveFolderName: options.driveFolderName ?? '' });
@@ -170,23 +198,13 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     /** Builds a byte-level reporter. Emits a per-file `transfer` event (only for
      *  files at/above progressMinBytes) plus a job-level `overall` event. */
     function transferReporter(relPath: string, direction: 'upload' | 'download'): TransferProgress {
-        const meter = new SpeedMeter();
         return (bytes, total) => {
             const percent = total > 0 ? Math.min(100, (bytes / total) * 100) : 100;
             if (total >= progressMinBytes) {
-                onProgress?.({ type: 'transfer', relPath, direction, bytes, total, percent, speedBps: meter.sample(bytes) });
+                onProgress?.({ type: 'transfer', relPath, direction, bytes, total, percent });
             }
             inFlightBytes.set(relPath, bytes);
-            const jobBytes = completedBytes + sumInFlightBytes();
-            onProgress?.({
-                type: 'overall',
-                transferredBytes: jobBytes,
-                totalBytes,
-                percent: totalBytes > 0 ? Math.min(100, (jobBytes / totalBytes) * 100) : 0,
-                speedBps: overallMeter.sample(jobBytes),
-                filesDone: completedFiles,
-                totalFiles,
-            });
+            emitOverall();
         };
     }
 
@@ -284,9 +302,13 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     for (const e of drive) if (e.kind === 'file') fileRelPaths.add(e.relPath);
     for (const n of stored) if (n.kind === 'file') fileRelPaths.add(n.relPath);
 
-    // ---- Plan pass: estimate the job's total transfer size for the overall
-    //      progress bar. Cheap signals only (no hashing): exact for new files,
-    //      approximate only when a "changed" decision would need the sha1. ----
+    // ---- Plan pass: count every file the reconcile will PROCESS (drives the
+    //      files-based overall bar) and estimate the DATA that will move (drives
+    //      the "X/Y transferred" readout). Cheap signals only (no hashing).
+    //      `localChanged`/`driveChanged` mirror the reconcile's logic: a null
+    //      stored hash/fingerprint means "unknown, not changed" (the reconcile
+    //      fills it in-place on the follow-up sync without re-transferring), so
+    //      a second sync that only re-hashes doesn't inflate `totalBytes`. ----
     for (const relPath of fileRelPaths) {
         if (isUnderDeletedFolder(relPath)) continue;
         const L = localByRel.get(relPath);
@@ -297,45 +319,28 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         const inDb = !!S;
         const dSize = driveSize(D?.node);
         let bytes = 0;
-        let transfers = false;
 
         if (inLocal && !inDrive && !inDb) {
             bytes = L!.size;
-            transfers = true;
         } else if (!inLocal && inDrive && !inDb) {
             bytes = dSize;
-            transfers = true;
         } else if (inLocal && inDrive && !inDb) {
             bytes = L!.size + dSize; // assume conflict
-            transfers = true;
         } else if (inLocal && inDrive) {
-            const localChanged = S!.localSha1 == null || S!.localSize !== L!.size || S!.localMtime !== L!.mtimeMs;
-            const driveChanged = S!.driveFingerprint == null || D!.fingerprint !== S!.driveFingerprint;
-            if (localChanged && !driveChanged) {
-                bytes = L!.size;
-                transfers = true;
-            } else if (!localChanged && driveChanged) {
-                bytes = dSize;
-                transfers = true;
-            } else if (localChanged && driveChanged) {
-                bytes = L!.size + dSize;
-                transfers = true;
-            }
+            const localChanged = S!.localSha1 != null && (S!.localSize !== L!.size || S!.localMtime !== L!.mtimeMs);
+            const driveChanged = S!.driveFingerprint != null && D!.fingerprint !== S!.driveFingerprint;
+            if (localChanged && !driveChanged) bytes = L!.size;
+            else if (!localChanged && driveChanged) bytes = dSize;
+            else if (localChanged && driveChanged) bytes = L!.size + dSize;
         } else if (inLocal && !inDrive) {
-            const localChanged = S!.localSha1 == null || S!.localSize !== L!.size || S!.localMtime !== L!.mtimeMs;
-            if (localChanged) {
-                bytes = L!.size;
-                transfers = true;
-            }
+            const localChanged = S!.localSha1 != null && (S!.localSize !== L!.size || S!.localMtime !== L!.mtimeMs);
+            if (localChanged) bytes = L!.size;
         } else if (!inLocal && inDrive) {
-            const driveChanged = S!.driveFingerprint == null || D!.fingerprint !== S!.driveFingerprint;
-            if (driveChanged) {
-                bytes = dSize;
-                transfers = true;
-            }
+            const driveChanged = S!.driveFingerprint != null && D!.fingerprint !== S!.driveFingerprint;
+            if (driveChanged) bytes = dSize;
         }
 
-        if (transfers) totalFiles++;
+        totalFiles++; // every file in the reconcile set counts as work
         totalBytes += bytes;
     }
     onProgress?.({ type: 'sync-plan', totalBytes, totalFiles });
@@ -499,6 +504,13 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             log(line);
             onProgress?.({ type: 'log', message: line });
             onProgress?.({ type: 'item', action: 'skip-error', relPath, message: reason });
+        } finally {
+            // A file is "processed" once its three-way merge finishes — including
+            // unchanged files (the common case on a follow-up sync). Bump + emit
+            // so the overall bar advances through the skip phase instead of
+            // stalling at "0 files, 0.0%" while the log scrolls skips.
+            filesDone++;
+            emitOverall();
         }
     }
 

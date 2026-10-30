@@ -196,8 +196,11 @@ Four concurrency changes, each targeting a different bottleneck:
    higher values overlap uploads/downloads so the wire stays busy while other
    files hash.
 
-The overall progress bar was reworked to sum *in-flight* bytes, so the percent
-and speed read correctly even with several files transferring at once.
+The overall progress bar tracks **files processed** (not just bytes), so a
+follow-up sync that is mostly "unchanged" files still advances instead of
+sitting at 0%. The transfer speed is sampled from the container's network
+counters rather than the backend's bursty progress estimates, so it reads as a
+stable real-world rate.
 
 ---
 

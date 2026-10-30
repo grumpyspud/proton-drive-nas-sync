@@ -137,7 +137,8 @@ This is your home base:
 
 ![Dashboard (dark)](screenshots/06-dashboard.png)
 
-- **Left — Sync activity:** live progress bars (percent + speed), the last sync
+- **Left — Sync activity:** live progress bars (files processed, bytes, and
+  network rate), the last sync
   summary, and a status badge (Idle / Syncing / Paused).
 - **Right — Local storage:** each data volume mounted into the container, with
   used/total and a fill bar.

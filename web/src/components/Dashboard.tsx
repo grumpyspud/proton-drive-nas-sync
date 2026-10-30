@@ -158,7 +158,6 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                             bytes: ev.bytes,
                             total: ev.total,
                             percent: ev.percent,
-                            speedBps: ev.speedBps,
                         });
                         return next;
                     });
@@ -621,12 +620,15 @@ function DeletionHoldCard({ hold, onConfirm, onCancel }: { hold: DeletionHold; o
 
 function OverallBar({ transferredBytes, totalBytes, percent, speedBps, filesDone, totalFiles }: OverallState) {
     const pct = Math.max(0, Math.min(100, percent));
+    const hasTransfer = totalBytes > 0;
     return (
         <div className="overall">
             <div className="overall-head">
                 <span className="overall-label">Overall sync</span>
                 <span className="overall-meta">
-                    {formatBytes(transferredBytes)} / {formatBytes(totalBytes)} · {formatSpeed(speedBps)}
+                    {hasTransfer
+                        ? `${formatBytes(transferredBytes)} / ${formatBytes(totalBytes)} · ${formatSpeed(speedBps)}`
+                        : 'Verifying files'}
                 </span>
             </div>
             <div className="progress-track">

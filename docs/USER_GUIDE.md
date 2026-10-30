@@ -83,8 +83,10 @@ dropdown on its row.
 
 While a sync runs, the **Sync activity** card shows:
 
-- an **overall progress bar** — bytes and files transferred, percent + speed,
-- a **per-file progress bar** for each file currently transferring,
+- an **overall progress bar** — files processed (percent + count) and, while
+  data is actually moving, bytes transferred plus the container's network rate,
+- a **per-file progress bar** (bytes + percent) for each file currently
+  transferring,
 - a **last-sync summary** — uploaded, downloaded, skipped, failed, conflicts,
   trashed on Drive, and recycled locally.
 
