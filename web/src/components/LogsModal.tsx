@@ -6,9 +6,9 @@ interface Props {
 }
 
 /**
- * Full, searchable, downloadable view of the server's persistent sync log
- * (the in-browser "Activity log" is capped at 200 items; this is the whole
- * file, written at /config/sync.log).
+ * Searchable, downloadable view of the server's on-disk sync log (the
+ * in-browser "Activity log" is capped at 200 items; this shows the file at
+ * /config/sync.log, which is rotated when it grows large).
  */
 export function LogsModal({ onClose }: Props) {
     const [q, setQ] = useState('');
@@ -81,7 +81,7 @@ export function LogsModal({ onClose }: Props) {
                         spellCheck={false}
                     />
                     <button className="btn btn-ghost btn-sm" onClick={() => void download()} disabled={downloading}>
-                        {downloading ? 'Downloading…' : 'Download full log'}
+                        {downloading ? 'Downloading…' : 'Download'}
                     </button>
                 </div>
                 {error && <div className="alert">{error}</div>}

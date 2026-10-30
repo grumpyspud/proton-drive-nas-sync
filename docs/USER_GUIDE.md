@@ -28,7 +28,7 @@ After signing in you land on the dashboard, with two columns:
 | **⏸ Pause / ▶ Resume** | Pause or resume all syncing globally. |
 | **⏹ Stop** | Stop the current sync (shown only while a sync is running). |
 | **＋ Create Sync Pair** | Add a new folder pair. |
-| **Logs ▾** | **Sync log** (full, searchable, downloadable), **Activity log** (recent events), or **Error log** (errors/conflicts/warnings). Turns **red** (errors) or **yellow** (warnings/conflicts) when there are new entries. |
+| **Logs ▾** | **Sync log** (recent server log, searchable, downloadable), **Activity log** (recent events), or **Error log** (errors/conflicts/warnings). Turns **red** (errors) or **yellow** (warnings/conflicts) when there are new entries. |
 | **⚙ Settings** | Backup, app password, lock, theme, and max concurrent transfers. |
 | **Sign out** | Sign out of Proton. |
 
@@ -172,7 +172,7 @@ The **Logs ▾** menu has three views:
 
 ![Logs menu](screenshots/14-logs-menu.png)
 
-- **Sync log** — the full persistent server log (`/config/sync.log`), searchable
+- **Sync log** — the recent server log (`/config/sync.log`), searchable
   and downloadable.
 
   ![Sync log](screenshots/10-logs.png)

@@ -231,8 +231,8 @@ To restore:
 
 The **Logs ▾** menu has three views:
 
-- **Sync log** — the full, searchable, downloadable server log (the persistent log
-  written at `/config/sync.log`):
+- **Sync log** — the recent server log, searchable and downloadable (written at
+  `/config/sync.log` and rotated when it grows large):
 
   ![Sync log](screenshots/10-logs.png)
 
