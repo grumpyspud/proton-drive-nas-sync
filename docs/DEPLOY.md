@@ -31,6 +31,10 @@ The build is multi-stage: it installs dependencies, builds the React frontend,
 and produces a single runtime image. (The repo is private, so clone with a key
 or token that has read access.)
 
+> Prebuilt images are published to the GitHub Container Registry
+> (`ghcr.io/grumpyspud/proton-drive-nas-sync`) on version tags, for both
+> `linux/amd64` and `linux/arm64`.
+
 ## 2. Run it
 
 ```bash
@@ -71,9 +75,13 @@ services:
 ## 3. First run
 
 1. Open the UI and sign in with your Proton account.
-2. **Add pair** — enter the local folder (absolute path under `/data`) and a
-   Proton Drive folder name.
+2. **Create Sync Pair** (top bar) — pick the local folder (absolute path under
+   `/data`) and a Proton Drive folder, then choose **Manual** or an **Auto-sync**
+   schedule.
 3. **Sync** — watch progress (% + speed) in real time.
+
+For a full walkthrough with screenshots see [SETUP.md](SETUP.md); for a reference
+of every feature and option see [USER_GUIDE.md](USER_GUIDE.md).
 
 The session is stored as an AES-256-GCM encrypted blob in `/config`; passwords
 are never written to disk. On restart the app resumes the session automatically.

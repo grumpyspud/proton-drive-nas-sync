@@ -9,7 +9,8 @@ and using the dashboard.
 > All screenshots below use fake placeholder data.
 
 For deployment specifics (NAS bind mounts, environment variables, security
-hardening, troubleshooting), see [DEPLOY.md](DEPLOY.md).
+hardening, troubleshooting), see [DEPLOY.md](DEPLOY.md). For a reference of every
+feature and option in the UI, see [USER_GUIDE.md](USER_GUIDE.md).
 
 ---
 
@@ -135,31 +136,39 @@ This is your home base:
 ![Dashboard (dark)](screenshots/06-dashboard.png)
 
 - **Left — Sync activity:** live progress bars (percent + speed), the last sync
-  summary, and an activity log.
-- **Right — Storage:** your Proton Drive usage.
-- **Right — Folder pairs:** the folders you're syncing and the form to add more.
+  summary, and a status badge (Idle / Syncing / Paused).
+- **Right — Storage:** your Proton Drive usage, with a warning when space runs low.
+- **Right — Folder pairs:** the folders you're syncing, with per-pair Sync / Trash /
+  Remove actions, an Auto-sync toggle, and a Dedupe Scan button.
 
-The top bar holds the global controls: **Pause/Resume**, **Stop**, **Logs**,
-**💾 Backup**, **🔒 App password**, **🔐 Lock**, **☀ Light / 🌙 Dark**, and
-**Sign out**.
+The top bar holds the global controls:
+
+- **⏸ Pause / ▶ Resume** — pause or resume all syncing.
+- **⏹ Stop** (shown only while syncing) — stop the current sync.
+- **＋ Create Sync Pair** — add a folder pair.
+- **Logs ▾** — open the **Sync log** or **Activity log** (see
+  [step 13](#13-viewing-logs)).
+- **⚙ Settings** — **💾 Backup**, **🔒 App password**, **🔐 Lock**,
+  **☀ Light / 🌙 Dark**, and **Max concurrent transfers**.
+- **Sign out**.
 
 ---
 
 ## 9. Add a folder pair
 
-In the **Folder pairs** card, browse (or type) the local folder on the NAS and the
-matching Proton Drive folder, then choose a sync schedule:
+Click **＋ Create Sync Pair** in the top bar, then browse (or type) the local
+folder on the NAS and the matching Proton Drive folder:
 
 ![Add a folder pair](screenshots/07-add-pair-folder-picker.png)
 
-- **Local folder (NAS)** — an absolute path under `/data` (e.g. `/data/photos`).
+- **NAS / local folder** — an absolute path under `/data` (e.g. `/data/photos`).
   You can browse subfolders or click **New folder** to create one.
 - **Proton Drive folder** — pick an existing Drive folder, or **My Files (entire
   drive)** to sync the whole drive.
-- **Real-time (1 min)** — poll for changes every 60 seconds.
-- **Auto-sync** — sync on a schedule (15 min … 24 h).
+- **Sync schedule** — either **Manual** (sync only when you click **Sync**) or
+  **Auto-sync** on a schedule, with a frequency from **1 min** through **Monthly**.
 
-Click **Add pair**, then **Sync** to run it immediately.
+Click **Create pair**, then **Sync** to run it immediately.
 
 > **Deletion safety.** Deletions are trashed before being removed, and if a sync
 > would delete more than a safety threshold of tracked files (for example, because
@@ -220,10 +229,15 @@ To restore:
 
 ## 13. Viewing logs
 
-**Logs** opens the full, searchable, downloadable server log (the persistent log
-written at `/config/sync.log`):
+The **Logs ▾** menu has two views:
 
-![Sync log](screenshots/10-logs.png)
+- **Sync log** — the full, searchable, downloadable server log (the persistent log
+  written at `/config/sync.log`):
+
+  ![Sync log](screenshots/10-logs.png)
+
+- **Activity log** — the most recent sync actions from the current session
+  (capped at 200 events), shown in the browser.
 
 ---
 

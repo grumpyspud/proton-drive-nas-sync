@@ -17,7 +17,11 @@ and Proton Drive.
   drive can never wipe your data.
 - **Web UI** — Proton-style login (SRP + optional 2FA + optional mailbox
   password), folder-pair manager, and a live sync dashboard with progress bars
-  (percent + speed) and storage usage.
+  (percent + speed), storage usage, and low-space warnings.
+- **Flexible schedules** — manual or auto-sync, from every 1 minute up to monthly.
+- **Duplicate-file scan** — find and recycle duplicate files within a pair, with a
+  minimum-size filter and an ignore list.
+- **Configurable concurrency** — 1–4 parallel transfers.
 - **Encrypted-at-rest credentials** — only an AES-256-GCM encrypted session blob
   is persisted; passwords are never stored.
 
@@ -43,8 +47,9 @@ docker compose up -d
 ```
 
 Open `http://localhost:8787`, sign in, and add a folder pair. For a step-by-step
-walkthrough with screenshots, see [docs/SETUP.md](docs/SETUP.md). For full
-deployment instructions and configuration reference,
+walkthrough with screenshots, see [docs/SETUP.md](docs/SETUP.md). For a reference
+of every feature and option, see [docs/USER_GUIDE.md](docs/USER_GUIDE.md). For
+full deployment instructions and configuration reference,
 see [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ### Development
