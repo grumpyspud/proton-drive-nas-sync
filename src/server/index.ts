@@ -627,15 +627,26 @@ app.post('/api/pairs/:id/trash/clear', requireAuth, async (req, res) => {
     }
 });
 
+const DEDUPE_MIN_BYTES = new Set([0, 1024, 10240, 102400, 1048576, 10485760]);
+
 app.get('/api/pairs/:id/duplicates', requireAuth, (req, res) => {
     const pair = getPairOrNull(req.params.id as string);
     if (!pair) {
         res.status(404).json({ error: 'Pair not found' });
         return;
     }
+    let minBytes = 0;
+    if (req.query.minBytes !== undefined) {
+        const raw = Number(req.query.minBytes);
+        if (!Number.isInteger(raw) || !DEDUPE_MIN_BYTES.has(raw)) {
+            res.status(400).json({ error: 'Invalid minBytes' });
+            return;
+        }
+        minBytes = raw;
+    }
     const db = new SyncDB(syncDbPath());
     try {
-        res.json({ groups: scanDuplicates(db, pair.id, pair.localDir, pair.dedupeMinBytes || 0) });
+        res.json({ groups: scanDuplicates(db, pair.id, pair.localDir, minBytes) });
     } finally {
         db.close();
     }

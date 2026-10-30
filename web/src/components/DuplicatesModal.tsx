@@ -1,7 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { getDuplicates, ignoreDuplicates, recycleDuplicates } from '../api';
 import type { DuplicateGroup, Pair } from '../types';
 import { formatBytes } from '../format';
+
+const DEDUPE_MIN_OPTIONS: Array<{ label: string; value: number }> = [
+    { label: 'No min size', value: 0 },
+    { label: '1 KB', value: 1024 },
+    { label: '10 KB', value: 10240 },
+    { label: '100 KB', value: 102400 },
+    { label: '1 MB', value: 1048576 },
+    { label: '10 MB', value: 10485760 },
+];
+
+const SEP = String.fromCharCode(0);
 
 interface Props {
     pair: Pair;
@@ -9,37 +20,37 @@ interface Props {
 }
 
 /**
- * Duplicate-file scan for a single pair, shown as a pop-up overlay. Scans on open
- * (reusing the per-file SHA-1 the sync engine already stores) and lets the user
- * keep / recycle / ignore identical copies. "Keep" is the checked state; if nothing
- * is checked, everything is kept (no way to remove all).
+ * Duplicate-file scan for a single pair, shown as a pop-up overlay. Does NOT scan
+ * on open — the user picks a minimum file size and clicks Scan. Reuses the per-file
+ * SHA-1 the sync engine already stores. "Keep" is the checked state; if nothing is
+ * checked, everything is kept (no way to remove all).
  */
 export function DuplicatesModal({ pair, onClose }: Props) {
+    const [minBytes, setMinBytes] = useState(0);
     const [groups, setGroups] = useState<DuplicateGroup[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [scanned, setScanned] = useState(false);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
     const [keep, setKeep] = useState<Record<string, boolean>>({});
 
-    const scan = useCallback(async () => {
+    async function scan() {
         setLoading(true);
         setError(null);
+        setNotice(null);
         try {
-            setGroups((await getDuplicates(pair.id)).groups);
+            setGroups((await getDuplicates(pair.id, minBytes)).groups);
             setKeep({});
+            setScanned(true);
         } catch (err) {
             setError((err as Error).message);
         } finally {
             setLoading(false);
         }
-    }, [pair.id]);
+    }
 
-    useEffect(() => {
-        void scan();
-    }, [scan]);
-
-    const prefix = (sha1: string) => `${pair.id}\u0000${sha1}\u0000`;
+    const prefix = (sha1: string) => `${pair.id}${SEP}${sha1}${SEP}`;
 
     function toggleKeep(sha1: string, relPath: string) {
         const k = prefix(sha1) + relPath;
@@ -84,18 +95,26 @@ export function DuplicatesModal({ pair, onClose }: Props) {
                 <div className="modal-head">
                     <h2>Duplicates — {pair.driveFolderName || 'My Files (root)'}</h2>
                     <div className="dupe-tools">
-                        {!loading && groups.length > 0 && (
-                            <span className="badge badge-paused">
-                                {groups.length} group{groups.length === 1 ? '' : 's'}
-                            </span>
-                        )}
-                        <button className="btn btn-ghost btn-sm" onClick={() => void scan()} disabled={loading}>
-                            Rescan
-                        </button>
                         <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
                             ✕
                         </button>
                     </div>
+                </div>
+
+                <div className="dupe-controls">
+                    <label className="dupe-filter">
+                        <span>Min file size</span>
+                        <select className="select" value={minBytes} onChange={(e) => setMinBytes(Number(e.target.value))}>
+                            {DEDUPE_MIN_OPTIONS.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                    {o.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                    <button className="btn btn-primary btn-sm" onClick={() => void scan()} disabled={loading}>
+                        {loading ? 'Scanning…' : 'Scan'}
+                    </button>
                 </div>
 
                 <p className="dupe-hint">Check the copies you want to keep — unchecked copies are recycled. If none are checked, everything is kept.</p>
@@ -105,6 +124,8 @@ export function DuplicatesModal({ pair, onClose }: Props) {
 
                 {loading ? (
                     <div className="muted">Scanning for duplicates…</div>
+                ) : !scanned ? (
+                    <div className="muted">Pick a minimum file size and click Scan to find duplicates.</div>
                 ) : groups.length === 0 ? (
                     <div className="muted">No duplicate files found.</div>
                 ) : (

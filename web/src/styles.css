@@ -1504,6 +1504,19 @@ select.select:focus {
 }
 
 /* ---------- Duplicates modal ---------- */
+.dupe-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+.dupe-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--ink-600);
+}
 .dupe-body {
     overflow-y: auto;
     max-height: 55vh;

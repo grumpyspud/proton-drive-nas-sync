@@ -193,8 +193,8 @@ export function clearTrash(id: string): Promise<{ ok: boolean }> {
     return request(`/api/pairs/${encodeURIComponent(id)}/trash/clear`, { method: 'POST' });
 }
 
-export function getDuplicates(id: string): Promise<{ groups: DuplicateGroup[] }> {
-    return request(`/api/pairs/${encodeURIComponent(id)}/duplicates`);
+export function getDuplicates(id: string, minBytes = 0): Promise<{ groups: DuplicateGroup[] }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/duplicates?minBytes=${minBytes}`);
 }
 
 export function ignoreDuplicates(id: string, relPaths: string[]): Promise<{ ok: boolean; ignored: number }> {
