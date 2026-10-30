@@ -230,9 +230,9 @@ Permanent deletion is a separate, explicit action you take in the Trash view.
 
 ### Does it run on my NAS?
 
-Any NAS that runs Docker (TrueNAS, Synology, QNAP, Unraid, etc.). The image is
-built for `amd64` today; `arm64` is planned for the public release — the code is
-already architecture-clean, so it's a build/publish step, not a rewrite.
+Any NAS that runs Docker (TrueNAS, Synology, QNAP, Unraid, etc.). Images are
+published for both `amd64` and `arm64`, so it runs on x86-64 and ARM-based NAS
+boxes alike.
 
 ### What if I hit my Proton Drive quota?
 
@@ -247,7 +247,7 @@ logins, or just let the persisted session resume instead of signing in again.
 
 ### Is this a backup tool or a sync tool?
 
-It's primarily a **sync** tool — a two-way mirror. A one-way backup is "upload
+It's a **sync** tool — a two-way mirror. A one-way backup is "upload
 new/changed files and never delete", whereas sync also propagates deletions.
 The app's own **config backup** (`.pdnbak`) is a separate thing: an encrypted
 snapshot of your *setup* (pairs + session + key), not your files.
@@ -259,7 +259,18 @@ account's session.
 
 ### How do I move to a new NAS?
 
-Two options: restore from an encrypted `.pdnbak` config backup (pairs + session +
-key), and/or copy the `/config` and `/data` volumes to the new host. Because the
-state DB carries the per-file fingerprints, a move won't trip the deletion
-safeguard or force a full re-upload.
+Copy the `/config` and `/data` volumes to the new host and point the container at
+them — that moves your pairs, session, and files together. The state DB carries
+the per-file fingerprints, so the new instance resumes without re-uploading or
+tripping the deletion safeguard.
+
+The encrypted `.pdnbak` backup restores the *config* only (pairs, session, and
+state DB) — **not your files** — so use it to rebuild the app when `/config` is
+lost but the files are already on the new host.
+
+> Each container needs its **own** Proton session. Don't restore one `.pdnbak`
+> into more than one container, or otherwise share a session across containers —
+> they'll fight over the refresh token and force repeated sign-ins. If several
+> containers connect to the same Proton account, sign in to each one separately,
+> and only use a `.pdnbak` to skip sign-in when that container is the only one
+> using that session.
