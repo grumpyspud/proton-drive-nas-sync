@@ -99,6 +99,12 @@ While a sync runs, the **Sync activity** card shows:
 Each pair has a **Dedupe Scan** button that finds identical files (by content hash)
 within that pair's local folder. Empty files are always skipped.
 
+Files are content-hashed as they're downloaded during a sync, so newly synced
+files are ready for dedupe immediately. If a pair still has older files without a
+stored hash, the **Dedupe Scan** button hashes those first — it shows a
+**Hashing… NN%** progress bar (and disables) until the backlog is caught up, then
+opens the scan as usual.
+
 1. Click **Dedupe Scan** on a pair.
 2. Choose a **minimum file size** (`No min size`, `1 KB`, `10 KB`, `100 KB`,
    `1 MB`, `10 MB`) and click **Scan**. The modal does not scan on its own.

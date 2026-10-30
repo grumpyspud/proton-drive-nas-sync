@@ -248,6 +248,14 @@ export class SyncDB {
         return rows.map(toNode);
     }
 
+    /** Files that have been pulled from Drive but never hashed locally
+     *  (local_sha1 IS NULL) — the set a backfill pass must hash so the
+     *  dedupe scan can see them. */
+    listNodesWithNullSha1(pairId: string): SyncNode[] {
+        const rows = this.db.prepare(`SELECT * FROM nodes WHERE pair_id = ? AND kind = 'file' AND local_sha1 IS NULL ORDER BY rel_path`).all(pairId) as unknown as NodeRow[];
+        return rows.map(toNode);
+    }
+
     /** RelPaths the user has asked to keep out of future duplicate scans. */
     ignoredPaths(pairId: string): Set<string> {
         const rows = this.db.prepare('SELECT rel_path FROM dupe_ignored WHERE pair_id = ?').all(pairId) as unknown as Array<{ rel_path: string }>;

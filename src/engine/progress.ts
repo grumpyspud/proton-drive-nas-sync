@@ -27,7 +27,7 @@ export type SyncAction =
     | 'mkdir-local';
 
 export type SyncProgressEvent =
-    | { type: 'sync-start'; pairId: string; localDir: string; driveFolderName: string; followUp?: boolean }
+    | { type: 'sync-start'; pairId: string; localDir: string; driveFolderName: string }
     | { type: 'walk'; side: 'local' | 'drive'; files: number; folders: number }
     | { type: 'sync-plan'; totalBytes: number; totalFiles: number }
     | {
@@ -47,8 +47,9 @@ export type SyncProgressEvent =
           filesDone: number;
           totalFiles: number;
       }
+    | { type: 'hash-progress'; pairId: string; done: number; total: number }
     | { type: 'item'; action: SyncAction; relPath: string; message?: string }
-    | { type: 'sync-complete'; pairId: string; summary: SyncSummary; followUp?: boolean }
+    | { type: 'sync-complete'; pairId: string; summary: SyncSummary }
     | { type: 'sync-error'; message: string }
     | { type: 'sync-paused' }
     | { type: 'sync-resumed' }

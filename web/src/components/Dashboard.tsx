@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, listPairs, listTrash, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
+import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listPairs, listTrash, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
 import type { DeletionHold, ErrorLogStatus, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
@@ -42,6 +42,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [deletionHold, setDeletionHold] = useState<DeletionHold | null>(null);
     const [showBackup, setShowBackup] = useState(false);
     const [dedupePair, setDedupePair] = useState<Pair | null>(null);
+    const [hashingPair, setHashingPair] = useState<{ pairId: string; done: number; total: number } | null>(null);
+    const hashingRef = useRef(false);
     const [reconnecting, setReconnecting] = useState(false);
     const [transferConcurrency, setTransferConcurrency] = useState(3);
     const [showCreatePair, setShowCreatePair] = useState(false);
@@ -58,6 +60,21 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         } catch (err) {
             setError((err as Error).message);
         }
+    }, []);
+
+    const openDedupe = useCallback(async (p: Pair) => {
+        setError(null);
+        hashingRef.current = true;
+        setHashingPair({ pairId: p.id, done: 0, total: 0 });
+        try {
+            await hashMissing(p.id);
+        } catch (err) {
+            setError((err as Error).message);
+        } finally {
+            hashingRef.current = false;
+            setHashingPair(null);
+        }
+        setDedupePair(p);
     }, []);
 
     const loadStorage = useCallback(async () => {
@@ -131,13 +148,9 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                 case 'sync-start':
                     setSyncing(true);
                     setError(null);
-                    if (!ev.followUp) {
-                        // A follow-up pass is an internal finalization step; keep
-                        // the initial sync's summary and activity feed visible.
-                        setSummary(null);
-                        setItems([]);
-                        setTotalItems(0);
-                    }
+                    setSummary(null);
+                    setItems([]);
+                    setTotalItems(0);
                     setActive(new Map());
                     setOverall(null);
                     setDeletionHold(null);
@@ -148,6 +161,9 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     break;
                 case 'sync-plan':
                     setOverall({ transferredBytes: 0, totalBytes: ev.totalBytes, percent: 0, speedBps: 0, filesDone: 0, totalFiles: ev.totalFiles });
+                    break;
+                case 'hash-progress':
+                    if (hashingRef.current) setHashingPair({ pairId: ev.pairId, done: ev.done, total: ev.total });
                     break;
                 case 'transfer':
                     setActive((prev) => {
@@ -196,7 +212,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     break;
                 case 'sync-complete':
                     setSyncing(false);
-                    if (!ev.followUp) setSummary(ev.summary);
+                    setSummary(ev.summary);
                     setActive(new Map());
                     setOverall(null);
                     void loadStorage();
@@ -543,9 +559,15 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                                     ))}
                                                 </select>
                                             )}
-                                            <button className="btn btn-ghost btn-sm" onClick={() => setDedupePair(p)}>
-                                                Dedupe Scan
-                                            </button>
+                                            {hashingPair && hashingPair.pairId === p.id ? (
+                                                <button className="btn btn-primary btn-sm" disabled>
+                                                    Hashing… {hashingPair.total > 0 ? `${Math.round((hashingPair.done / hashingPair.total) * 100)}%` : ''}
+                                                </button>
+                                            ) : (
+                                                <button className="btn btn-ghost btn-sm" onClick={() => void openDedupe(p)}>
+                                                    Dedupe Scan
+                                                </button>
+                                            )}
                                         </div>
                                     </li>
                                 );

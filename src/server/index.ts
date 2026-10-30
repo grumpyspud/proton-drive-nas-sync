@@ -1,7 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { statfs } from 'node:fs/promises';
+import { stat, statfs } from 'node:fs/promises';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import path from 'node:path';
@@ -16,6 +16,7 @@ import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce, SyncAbortedError, DEFAULT_TRANSFER_CONCURRENCY, MAX_TRANSFER_CONCURRENCY } from '../engine/sync';
 import { DeletionTripwireError } from '../engine/safety';
 import { recycleDuplicates, scanDuplicates } from '../engine/duplicates';
+import { sha1OfFile } from '../fs/files';
 import type { ProgressHandler, SyncProgressEvent } from '../engine/progress';
 import { logger } from '../logger';
 import { SyncDB, type Pair } from '../state/syncDb';
@@ -119,7 +120,6 @@ function clampDedupeMinBytes(value: unknown): number {
 let syncing = false;
 let paused = false;
 let stopRequested = false;
-let followUpPairId: string | null = null;
 
 interface PendingDeletion {
     pairId: string;
@@ -132,16 +132,7 @@ interface PendingDeletion {
 }
 let pendingDeletion: PendingDeletion | null = null;
 
-// Events that are pure per-file progress and should be hidden during the
-// follow-up finalization pass (it mostly re-hashes already-synced files, so its
-// counters would otherwise paint a confusing "everything skipped" picture).
-function isFollowUpNoise(event: SyncProgressEvent): boolean {
-    if (event.type === 'walk' || event.type === 'sync-plan' || event.type === 'overall' || event.type === 'transfer') return true;
-    if (event.type === 'item') return event.action !== 'skip-error' && event.action !== 'conflict';
-    return false;
-}
-
-async function runSync(pairId: string, allowDeletions = false, followUp = false): Promise<boolean> {
+async function runSync(pairId: string, allowDeletions = false): Promise<boolean> {
     if (syncing || paused) return false;
     syncing = true;
     stopRequested = false;
@@ -151,28 +142,13 @@ async function runSync(pairId: string, allowDeletions = false, followUp = false)
         const pair = db.getPair(pairId);
         if (!pair) return false;
 
-        // Detect the pair's first successful sync so we can queue one follow-up
-        // pass afterwards (it populates local content hashes for files pulled down
-        // from Drive — which dedupe needs — and catches drift accumulated during
-        // a long initial sync).
-        const firstSync = pair.lastSyncAt == null;
-
         const session = authService.getSession();
         // Re-resolve the Drive folder each cycle (robust against renames/recreates).
         const root = await session.sdk.getMyFilesRootFolder();
         const driveFolderUid = await findOrCreateFolderPath(session.sdk, root.uid, pair.driveFolderName);
         db.upsertPair({ ...pair, driveFolderUid });
 
-        const onProgress: ProgressHandler = followUp
-            ? (event) => {
-                  if (event.type === 'sync-start') {
-                      broadcast({ ...event, followUp: true });
-                      return;
-                  }
-                  if (isFollowUpNoise(event)) return;
-                  broadcast(event);
-              }
-            : broadcast;
+        const onProgress: ProgressHandler = broadcast;
         const summary = await syncOnce({
             sdk: session.sdk,
             pairId,
@@ -187,8 +163,7 @@ async function runSync(pairId: string, allowDeletions = false, followUp = false)
             allowDeletions,
         });
         db.markSynced(pairId);
-        broadcast({ type: 'sync-complete', pairId, summary, followUp });
-        if (firstSync) followUpPairId = pairId;
+        broadcast({ type: 'sync-complete', pairId, summary });
         return true;
     } catch (error) {
         if (error instanceof SyncAbortedError) {
@@ -208,14 +183,6 @@ async function runSync(pairId: string, allowDeletions = false, followUp = false)
         syncing = false;
         stopRequested = false;
         db.close();
-        const followUp = followUpPairId;
-        followUpPairId = null;
-        if (followUp) {
-            broadcast({ type: 'log', message: 'Initial sync complete — running a follow-up sync to populate dedupe data and catch any changes made during the initial pass.' });
-            setImmediate(() => {
-                void runSync(followUp, false, true);
-            });
-        }
     }
 }
 
@@ -473,7 +440,6 @@ async function signOutAndReset(): Promise<void> {
     paused = false;
     stopRequested = false;
     pendingDeletion = null;
-    followUpPairId = null;
     logger.info('Signed out — cleared all folder pairs and local trash');
 }
 
@@ -876,6 +842,40 @@ app.get('/api/pairs/:id/duplicates', requireAuth, (req, res) => {
     const db = new SyncDB(syncDbPath());
     try {
         res.json({ groups: scanDuplicates(db, pair.id, pair.localDir, minBytes) });
+    } finally {
+        db.close();
+    }
+});
+
+// Backfill content hashes for files pulled from Drive before the streaming-hash
+// change (local_sha1 NULL). Runs on demand when the user starts a dedupe scan, so
+// the scan sees every file without waiting for the next sync. Broadcasts
+// `hash-progress` so the UI can render the pair's button as a progress bar.
+app.post('/api/pairs/:id/hash-missing', requireAuth, async (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    const db = new SyncDB(syncDbPath());
+    try {
+        const nodes = db.listNodesWithNullSha1(pair.id);
+        let hashed = 0;
+        let done = 0;
+        for (const node of nodes) {
+            const absPath = path.join(pair.localDir, node.relPath);
+            try {
+                const st = await stat(absPath);
+                const sha1 = await sha1OfFile(absPath);
+                db.upsertNode({ ...node, localSha1: sha1, localSize: st.size, localMtime: st.mtimeMs });
+                hashed++;
+            } catch {
+                // missing or unreadable — leave its hash null; a later sync re-hashes it
+            }
+            done++;
+            broadcast({ type: 'hash-progress', pairId: pair.id, done, total: nodes.length });
+        }
+        res.json({ hashed, total: nodes.length });
     } finally {
         db.close();
     }

@@ -134,16 +134,18 @@ export async function downloadFile(
     nodeUid: string,
     localPath: string,
     onProgress?: TransferProgress,
-): Promise<void> {
+): Promise<{ sha1: string; size: number }> {
     const downloader = await sdk.getFileDownloader(nodeUid);
     const claimedSize = downloader.getClaimedSizeInBytes();
     const tmpPath = `${localPath}.pdn-part`;
     const out = createWriteStream(tmpPath);
+    const hasher = createHash('sha1');
     let received = 0;
 
     const stream = new WritableStream<Uint8Array>({
         write: (chunk) => {
             received += chunk.byteLength;
+            hasher.update(chunk);
             onProgress?.(received, claimedSize ?? received);
             if (!out.write(Buffer.from(chunk))) {
                 return new Promise<void>((resolve) => out.once('drain', () => resolve()));
@@ -164,6 +166,7 @@ export async function downloadFile(
         }
 
         await rename(tmpPath, localPath);
+        return { sha1: hasher.digest('hex'), size: received };
     } catch (err) {
         await rm(tmpPath, { force: true }).catch(() => {});
         throw err;

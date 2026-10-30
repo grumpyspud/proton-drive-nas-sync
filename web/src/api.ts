@@ -217,6 +217,10 @@ export function getDuplicates(id: string, minBytes = 0): Promise<{ groups: Dupli
     return request(`/api/pairs/${encodeURIComponent(id)}/duplicates?minBytes=${minBytes}`);
 }
 
+export function hashMissing(id: string): Promise<{ hashed: number; total: number }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/hash-missing`, { method: 'POST' });
+}
+
 export function ignoreDuplicates(id: string, relPaths: string[]): Promise<{ ok: boolean; ignored: number }> {
     return request(`/api/pairs/${encodeURIComponent(id)}/duplicates/ignore`, { method: 'POST', body: JSON.stringify({ relPaths }) });
 }

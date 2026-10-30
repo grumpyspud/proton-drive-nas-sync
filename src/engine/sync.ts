@@ -1,4 +1,4 @@
-import { mkdir, rename, rm } from 'node:fs/promises';
+import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { ProtonDriveClient } from '@protontech/drive-sdk';
 import { downloadFile, sha1OfFile, uploadFile, uploadFileRevision } from '../fs/files';
@@ -208,15 +208,17 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         };
     }
 
-    async function downloadTo(uid: string, relPath: string, localPath: string): Promise<void> {
+    async function downloadTo(uid: string, relPath: string, localPath: string): Promise<{ sha1: string; size: number; mtimeMs: number }> {
         await mkdir(path.dirname(localPath), { recursive: true });
         let size = 0;
         const rep = transferReporter(relPath, 'download');
-        await downloadFile(sdk, uid, localPath, (bytes, total) => {
+        const info = await downloadFile(sdk, uid, localPath, (bytes, total) => {
             size = total;
             rep(bytes, total);
         });
         finishTransfer(relPath, size);
+        const st = await stat(localPath);
+        return { sha1: info.sha1, size: info.size, mtimeMs: st.mtimeMs };
     }
 
     // Resolve a conflict: local wins, but the Drive version is preserved
@@ -397,8 +399,8 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
 
             // -- new Drive file --
             if (!inLocal && inDrive && !inDb) {
-                await downloadTo(D.uid, relPath, path.join(localDir, relPath));
-                db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: null, localSize: null, localMtime: null });
+                const dl = await downloadTo(D.uid, relPath, path.join(localDir, relPath));
+                db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: dl.sha1, localSize: dl.size, localMtime: dl.mtimeMs });
                 result.downloaded++;
                 onProgress?.({ type: 'item', action: 'download', relPath });
                 log(`downloaded ${relPath}`);
@@ -432,8 +434,8 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                     onProgress?.({ type: 'item', action: 'upload', relPath });
                     log(`uploaded revision ${relPath}`);
                 } else if (!localChanged && driveChanged) {
-                    await downloadTo(D.uid, relPath, path.join(localDir, relPath));
-                    db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: null, localSize: null, localMtime: null });
+                    const dl = await downloadTo(D.uid, relPath, path.join(localDir, relPath));
+                    db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: dl.sha1, localSize: dl.size, localMtime: dl.mtimeMs });
                     result.downloaded++;
                     onProgress?.({ type: 'item', action: 'download', relPath });
                     log(`downloaded ${relPath}`);
@@ -486,8 +488,8 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             if (!inLocal && inDrive) {
                 const driveChanged = S!.driveFingerprint != null && driveFp !== S!.driveFingerprint;
                 if (driveChanged) {
-                    await downloadTo(D.uid, relPath, path.join(localDir, relPath));
-                    db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: null, localSize: null, localMtime: null });
+                    const dl = await downloadTo(D.uid, relPath, path.join(localDir, relPath));
+                    db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: dl.sha1, localSize: dl.size, localMtime: dl.mtimeMs });
                     result.downloaded++;
                     onProgress?.({ type: 'item', action: 'download', relPath });
                     log(`restored ${relPath} (local copy was deleted)`);
@@ -506,7 +508,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             onProgress?.({ type: 'item', action: 'skip-error', relPath, message: reason });
         } finally {
             // A file is "processed" once its three-way merge finishes — including
-            // unchanged files (the common case on a follow-up sync). Bump + emit
+            // unchanged files (the common case on a steady-state sync). Bump + emit
             // so the overall bar advances through the skip phase instead of
             // stalling at "0 files, 0.0%" while the log scrolls skips.
             filesDone++;
