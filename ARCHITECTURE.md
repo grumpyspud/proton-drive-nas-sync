@@ -41,8 +41,9 @@ Proton Drive. It is written in TypeScript on Node.js.
    or login flows, session management, user address provider." Those are built
    in the Auth/Session layer here.
 2. **The SDK has no Sync module yet.** The bidirectional sync engine is built
-   on the SDK's client primitives (list, upload, download, move, trash) plus
-   event-based update polling.
+   on the SDK's client primitives (list, upload, download, move, trash), with
+   change detection by interval polling — Proton Drive exposes no push/webhook
+   for remote changes.
 3. **The crypto model is changing.** Proton Drive moves to a new cryptographic
    model around end of 2026 / early 2027. Clients that only implement the old
    model will stop interoperating until they upgrade.
@@ -91,12 +92,19 @@ NAS path  →  Drive link ID  →  revision / content hash / mtime
 
 Change detection:
 
-- **Local (NAS) side** — filesystem watcher on the watched folders.
-- **Remote (Drive) side** — the SDK's event-based update polling.
+The engine polls on the configured interval — there is no server-side push from
+Proton, and no filesystem watcher (a watcher would still miss remote Drive-side
+changes). Each cycle it walks both trees and diffs them against the state DB:
 
-Each event is diffed against the state DB to compute the minimal operation
-(add / modify / delete / rename) on the other side. Conflicts are handled by a
-configurable policy (default: keep both, rename the incoming one).
+- **Local (NAS) side** — a file's size + mtime are compared first; only if they
+  differ is the file re-hashed. Unchanged files reuse the stored hash (no
+  re-hash, no re-transfer).
+- **Remote (Drive) side** — the SDK reports a content fingerprint (SHA-1 + size)
+  for each file, compared against the stored one.
+
+Each path is diffed to compute the minimal operation (add / modify / delete /
+rename) on the other side. Conflicts keep both copies: the local copy wins and
+the other side's version is preserved as `<name>.conflict-<timestamp>`.
 
 ### Deletion safety (catastrophic-delete protection)
 
@@ -123,7 +131,8 @@ only deletion verb, and `deleteNodes` (hard) is never called by the sync loop.
 ## Backup / restore
 
 Backup and restore are one-directional jobs layered on the same primitives as
-the sync engine:
+the sync engine. They exist at the engine level; the web UI is sync-first (the
+UI's "Backup" is an encrypted config backup, not a file backup).
 
 - **Backup** — walk the NAS tree, upload new/changed files to Drive, record
   mappings.
@@ -138,3 +147,11 @@ the sync engine:
   - `/data` — the NAS-side watched folders.
 - Runs on any NAS that can run Docker (TrueNAS, Synology, QNAP,
   Unraid, etc.).
+
+## License
+
+This project is **MIT**, but it depends on `@protontech/crypto` (Proton's
+OpenPGP fork + SRP primitives), which is **GPL-3.0**. The Drive SDK itself
+(`@protontech/drive-sdk`) is MIT. Bundling the GPL dependency means the
+distributed image carries GPL obligations — flag this before any public
+redistribution.

@@ -20,18 +20,14 @@ Proton's own terms of service.
 
 ## What does it actually do?
 
-Two things in the web UI today:
+Its headline feature is **two-way folder sync** — pair a NAS folder with a Proton
+Drive folder and keep them mirrored. Additions, edits, and deletions on either
+side propagate to the other.
 
-1. **Two-way folder sync** — pair a NAS folder with a Proton Drive folder and
-   keep them mirrored. Additions, edits, and deletions on either side propagate
-   to the other.
-2. **Encrypted config backup/restore** — export everything needed to move or
-   rebuild the app (folder pairs, Proton session, encryption key) to an
-   encrypted `.pdnbak` file, then restore it on a new machine without
-   re-signing in.
-
-(The codebase also has one-way backup and restore engines built on the same
-primitives; the polished web UI is sync-first.)
+It also ships an **encrypted config backup/restore** — export everything needed
+to move or rebuild the app (folder pairs, Proton session, encryption key) to an
+encrypted `.pdnbak` file, then restore it on a new machine without re-signing
+in. (That's a snapshot of your *setup*, not your files.)
 
 ---
 
