@@ -43,9 +43,9 @@ in. (That's a snapshot of your *setup*, not your files.)
   to host.
 - **Un-branded and honest.** No Proton branding — it's explicitly third-party —
   with a disclaimer on the login screen.
-- **Two-column dashboard.** Live sync activity and progress on the left; storage
-  usage and folder pairs on the right. Everything you need to see is on one
-  screen.
+- **Two-column dashboard.** Live sync activity and progress on the left; local
+  storage, Proton Drive storage, and folder pairs on the right. Everything you
+  need to see is on one screen.
 - **Actions live in modals.** Creating a pair, the duplicate scan, logs, and the
   trash are pop-up overlays. The top bar holds only the global controls
   (Pause/Resume, Stop, Create pair, Logs, Settings, Sign out).
@@ -245,6 +245,18 @@ boxes alike.
 Uploads that would exceed quota fail that file, are logged, and are retried on
 the next cycle. The dashboard shows your usage and warns you at 80% (amber) and
 90% (red) so you catch it before it bites.
+
+### Why did the Logs button turn red (or yellow)?
+
+The **Logs ▾** button is a live indicator for the **error log** — a separate,
+persistent log of errors, conflicts, and warnings. It turns **red** when there
+are new (unseen) errors, **yellow** for new warnings/conflicts. Open **Logs ▾ →
+Error log** to review them (colour-coded by severity), then **Reset** to clear the
+indicator, **Clear** to wipe the log, or **Save** to download it.
+
+The error log exists because the main sync log rotates once it grows large, so an
+early error on a big sync could scroll away. Errors/conflicts/warnings are written
+to the error log as well, so they aren't lost.
 
 ### What if I get "too many logins" (429)?
 

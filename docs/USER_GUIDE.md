@@ -16,8 +16,8 @@ After signing in you land on the dashboard, with two columns:
 
 - **Sync activity** (left) — the live status and progress of the current sync, plus
   the last-sync summary.
-- **Storage** and **Folder pairs** (right) — your Proton Drive usage and the list
-  of sync pairs.
+- **Local storage**, **Storage**, and **Folder pairs** (right) — your NAS volumes'
+  usage, your Proton Drive usage, and the list of sync pairs.
 
 ![Dashboard](screenshots/06-dashboard.png)
 
@@ -28,7 +28,7 @@ After signing in you land on the dashboard, with two columns:
 | **⏸ Pause / ▶ Resume** | Pause or resume all syncing globally. |
 | **⏹ Stop** | Stop the current sync (shown only while a sync is running). |
 | **＋ Create Sync Pair** | Add a new folder pair. |
-| **Logs ▾** | **Sync log** (full, searchable, downloadable) or **Activity log** (recent events). |
+| **Logs ▾** | **Sync log** (full, searchable, downloadable), **Activity log** (recent events), or **Error log** (errors/conflicts/warnings). Turns **red** (errors) or **yellow** (warnings/conflicts) when there are new entries. |
 | **⚙ Settings** | Backup, app password, lock, theme, and max concurrent transfers. |
 | **Sign out** | Sign out of Proton. |
 
@@ -147,9 +147,16 @@ Several guards prevent a mistake from wiping data:
 
 ---
 
-## Storage usage
+## Local storage
 
-The **Storage** card shows how much of your Proton Drive you're using.
+The **Local storage** card sits above the Proton Drive **Storage** card and shows
+every data volume mounted into the container — `/data` plus any other bind mounts
+you've added — with per-volume used/total and a fill bar. The container's own
+storage and `/config` are excluded automatically.
+
+## Storage usage (Proton Drive)
+
+The **Storage** card shows how much of your Proton Drive quota you're using.
 
 - **Above 80%** — the bar turns yellow-orange.
 - **Above 90%** — the bar turns red and a **"Warning: Drive space almost full"**
@@ -161,7 +168,7 @@ The **Storage** card shows how much of your Proton Drive you're using.
 
 ## Logs
 
-The **Logs ▾** menu has two views:
+The **Logs ▾** menu has three views:
 
 ![Logs menu](screenshots/14-logs-menu.png)
 
@@ -174,6 +181,27 @@ The **Logs ▾** menu has two views:
   (capped at 200 events).
 
   ![Activity log](screenshots/17-activity-log.png)
+
+- **Error log** — a separate, persistent log of **errors**, **conflicts**, and
+  **warnings** only (see below).
+
+### Error log
+
+The **Logs ▾** button turns **red** when there are unseen errors, or **yellow**
+for unseen warnings/conflicts. Open **Logs ▾ → Error log** to review them:
+
+![Error log](screenshots/21-error-log.png)
+
+Entries are colour-coded by severity — **error** (red), **conflict** (orange),
+**warning** (yellow). Three actions are available:
+
+- **Reset** — mark the current entries as seen (returns the button to normal).
+- **Clear** — delete every entry.
+- **Save** — download the whole log as a `.txt` file.
+
+> The main sync log is rotated once it grows large, so an early problem on a long
+> sync could scroll away. The error log is separate and only records
+> errors/conflicts/warnings, so those survive.
 
 ---
 
