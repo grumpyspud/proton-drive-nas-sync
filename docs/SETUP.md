@@ -237,7 +237,9 @@ The **Logs ▾** menu has two views:
   ![Sync log](screenshots/10-logs.png)
 
 - **Activity log** — the most recent sync actions from the current session
-  (capped at 200 events), shown in the browser.
+  (capped at 200 events), shown in the browser:
+
+  ![Activity log](screenshots/17-activity-log.png)
 
 ---
 

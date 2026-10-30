@@ -19,6 +19,8 @@ After signing in you land on the dashboard, with two columns:
 - **Storage** and **Folder pairs** (right) — your Proton Drive usage and the list
   of sync pairs.
 
+![Dashboard](screenshots/06-dashboard.png)
+
 ### Top bar
 
 | Control | What it does |
@@ -47,6 +49,8 @@ the other).
    drive)** to sync the whole drive.
 4. **Sync schedule** — **Manual** or **Auto-sync** (see below).
 5. Click **Create pair**.
+
+![Create sync pair](screenshots/07-add-pair-folder-picker.png)
 
 ### Manual vs Auto-sync
 
@@ -83,6 +87,8 @@ While a sync runs, the **Sync activity** card shows:
 - a **last-sync summary** — uploaded, downloaded, skipped, failed, conflicts,
   trashed on Drive, and recycled locally.
 
+![Sync in progress](screenshots/19-sync-progress.png)
+
 ---
 
 ## Duplicate files (dedupe)
@@ -106,6 +112,8 @@ deliberately no way to remove all copies at once.
 Ignored files are listed at the bottom of the modal, grouped by content, where you
 can **Reset** an individual group or **Reset all** to bring them back into scans.
 
+![Duplicates](screenshots/15-duplicates.png)
+
 ---
 
 ## Trash (recycle bin)
@@ -120,6 +128,8 @@ pair to see what's been recycled:
 Recycled local files live in a hidden `.pdn-trash` folder inside the pair's local
 folder; on the Drive side, deletions go to Proton Drive's trash.
 
+![Trash](screenshots/16-trash.png)
+
 ---
 
 ## Deletion safety
@@ -133,6 +143,8 @@ Several guards prevent a mistake from wiping data:
   files, it pauses and asks for explicit confirmation, showing exactly what would
   be trashed (Drive) and recycled (local).
 
+![Deletion confirmation](screenshots/20-deletion-hold.png)
+
 ---
 
 ## Storage usage
@@ -143,20 +155,33 @@ The **Storage** card shows how much of your Proton Drive you're using.
 - **Above 90%** — the bar turns red and a **"Warning: Drive space almost full"**
   message appears under it.
 
+![Storage warning](screenshots/18-storage-warning.png)
+
 ---
 
 ## Logs
 
-- **Sync log** (Logs ▾ → **Sync log**) — the full persistent server log
-  (`/config/sync.log`), searchable and downloadable.
-- **Activity log** (Logs ▾ → **Activity log**) — the most recent sync actions from
-  the current browser session (capped at 200 events).
+The **Logs ▾** menu has two views:
+
+![Logs menu](screenshots/14-logs-menu.png)
+
+- **Sync log** — the full persistent server log (`/config/sync.log`), searchable
+  and downloadable.
+
+  ![Sync log](screenshots/10-logs.png)
+
+- **Activity log** — the most recent sync actions from the current browser session
+  (capped at 200 events).
+
+  ![Activity log](screenshots/17-activity-log.png)
 
 ---
 
 ## Settings
 
 The **⚙ Settings** menu holds:
+
+![Settings menu](screenshots/13-settings-menu.png)
 
 - **💾 Backup** — export an encrypted backup (see below).
 - **🔒 App password / 🔓 Set password** — set or change the dashboard's own
