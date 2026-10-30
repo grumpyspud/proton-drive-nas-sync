@@ -137,7 +137,10 @@ This is your home base:
 
 - **Left — Sync activity:** live progress bars (percent + speed), the last sync
   summary, and a status badge (Idle / Syncing / Paused).
-- **Right — Storage:** your Proton Drive usage, with a warning when space runs low.
+- **Right — Local storage:** each data volume mounted into the container, with
+  used/total and a fill bar.
+- **Right — Proton Drive Storage:** your Proton Drive usage, with a warning when
+  space runs low.
 - **Right — Folder pairs:** the folders you're syncing, with per-pair Sync / Trash /
   Remove actions, an Auto-sync toggle, and a Dedupe Scan button.
 

@@ -695,7 +695,7 @@ function StorageCard({ storage }: { storage: StorageInfo }) {
 
     return (
         <div className="card">
-            <h2>Storage</h2>
+            <h2>Proton Drive Storage</h2>
             <div className="storage-head">
                 <span className="storage-nums">
                     {formatBytes(storage.driveBytes)} <span className="muted">of</span> {formatBytes(storage.maxBytes)}

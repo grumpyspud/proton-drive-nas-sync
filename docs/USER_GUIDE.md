@@ -16,7 +16,7 @@ After signing in you land on the dashboard, with two columns:
 
 - **Sync activity** (left) — the live status and progress of the current sync, plus
   the last-sync summary.
-- **Local storage**, **Storage**, and **Folder pairs** (right) — your NAS volumes'
+- **Local storage**, **Proton Drive Storage**, and **Folder pairs** (right) — your NAS volumes'
   usage, your Proton Drive usage, and the list of sync pairs.
 
 ![Dashboard](screenshots/06-dashboard.png)
@@ -149,14 +149,14 @@ Several guards prevent a mistake from wiping data:
 
 ## Local storage
 
-The **Local storage** card sits above the Proton Drive **Storage** card and shows
+The **Local storage** card sits above the **Proton Drive Storage** card and shows
 every data volume mounted into the container — `/data` plus any other bind mounts
 you've added — with per-volume used/total and a fill bar. The container's own
 storage and `/config` are excluded automatically.
 
-## Storage usage (Proton Drive)
+## Proton Drive Storage
 
-The **Storage** card shows how much of your Proton Drive quota you're using.
+The **Proton Drive Storage** card shows how much of your Proton Drive quota you're using.
 
 - **Above 80%** — the bar turns yellow-orange.
 - **Above 90%** — the bar turns red and a **"Warning: Drive space almost full"**
