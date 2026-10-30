@@ -5,21 +5,12 @@ import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { LogsModal } from './LogsModal';
 import { BackupModal } from './BackupModal';
-import { DuplicatesPanel } from './DuplicatesPanel';
+import { DuplicatesModal } from './DuplicatesModal';
 import { CreatePairModal } from './CreatePairModal';
 import { ActivityLogModal } from './ActivityLogModal';
 import { SYNC_FREQUENCIES, frequencyLabel, pairInterval } from '../schedule';
 
 const MAX_LOG = 200;
-
-const DEDUPE_MIN_OPTIONS: Array<{ label: string; value: number }> = [
-    { label: 'No min size', value: 0 },
-    { label: '1 KB', value: 1024 },
-    { label: '10 KB', value: 10240 },
-    { label: '100 KB', value: 102400 },
-    { label: '1 MB', value: 1048576 },
-    { label: '10 MB', value: 10485760 },
-];
 
 interface Props {
     uid?: string;
@@ -47,7 +38,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [scanState, setScanState] = useState<{ side: 'local' | 'drive'; files: number; folders: number } | null>(null);
     const [deletionHold, setDeletionHold] = useState<DeletionHold | null>(null);
     const [showBackup, setShowBackup] = useState(false);
-    const [dupesNonce, setDupesNonce] = useState(0);
+    const [dedupePair, setDedupePair] = useState<Pair | null>(null);
     const [reconnecting, setReconnecting] = useState(false);
     const [transferConcurrency, setTransferConcurrency] = useState(3);
     const [showCreatePair, setShowCreatePair] = useState(false);
@@ -172,7 +163,6 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     setSummary(ev.summary);
                     setActive(new Map());
                     setOverall(null);
-                    setDupesNonce((n) => n + 1);
                     void loadStorage();
                     break;
                 case 'sync-error':
@@ -467,7 +457,6 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                             </div>
                         )}
                     </div>
-                    <DuplicatesPanel nonce={dupesNonce} pairs={pairs} />
                 </section>
 
                 <section className="col col-side">
@@ -516,16 +505,9 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                                     ))}
                                                 </select>
                                             )}
-                                            <Toggle label="Dedupe" checked={p.dedupeEnabled} onChange={(v) => onUpdatePair(p.id, { dedupeEnabled: v })} />
-                                            {p.dedupeEnabled && (
-                                                <select className="select" value={p.dedupeMinBytes} onChange={(e) => onUpdatePair(p.id, { dedupeMinBytes: Number(e.target.value) })}>
-                                                    {DEDUPE_MIN_OPTIONS.map((o) => (
-                                                        <option key={o.value} value={o.value}>
-                                                            {o.label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            )}
+                                            <button className="btn btn-ghost btn-sm" onClick={() => setDedupePair(p)}>
+                                                Dedupe Scan
+                                            </button>
                                         </div>
                                     </li>
                                 );
@@ -542,6 +524,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
             {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
             {showActivityLog && <ActivityLogModal items={items} totalItems={totalItems} onClose={() => setShowActivityLog(false)} />}
             {showCreatePair && <CreatePairModal onCreated={reload} onClose={() => setShowCreatePair(false)} />}
+            {dedupePair && <DuplicatesModal pair={dedupePair} onClose={() => setDedupePair(null)} />}
             {showBackup && <BackupModal onClose={() => setShowBackup(false)} />}
         </div>
     );

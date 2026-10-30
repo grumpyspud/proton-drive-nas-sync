@@ -1503,3 +1503,9 @@ select.select:focus {
     gap: 8px;
 }
 
+/* ---------- Duplicates modal ---------- */
+.dupe-body {
+    overflow-y: auto;
+    max-height: 55vh;
+}
+
