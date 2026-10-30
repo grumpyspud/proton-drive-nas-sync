@@ -409,7 +409,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 } else {
                     await resolveConflict(relPath, D, L, localSha1!);
                     result.conflicts++;
-                    onProgress?.({ type: 'item', action: 'conflict', relPath });
+                    onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'kept local, Drive version preserved' });
                 }
                 return;
             }
@@ -440,7 +440,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                     } else {
                         await resolveConflict(relPath, D, L, localSha1!);
                         result.conflicts++;
-                        onProgress?.({ type: 'item', action: 'conflict', relPath });
+                        onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'kept local, Drive version preserved' });
                     }
                 } else {
                     // unchanged — fill any null fingerprints with observed values
@@ -498,7 +498,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             const line = `skipped ${relPath}: ${reason}`;
             log(line);
             onProgress?.({ type: 'log', message: line });
-            onProgress?.({ type: 'item', action: 'skip-error', relPath });
+            onProgress?.({ type: 'item', action: 'skip-error', relPath, message: reason });
         }
     }
 

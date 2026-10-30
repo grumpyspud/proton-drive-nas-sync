@@ -18,6 +18,7 @@ import { logger } from '../logger';
 import { SyncDB, type Pair } from '../state/syncDb';
 import { authService } from './auth';
 import { appendSyncLog, querySyncLog, syncLogPath } from './syncLog';
+import { appendErrorLog, clearErrorLog, errorLogStatus, readErrorLog, setLastReset } from './errorLog';
 import { isAppAuthEnabled, isValidSession, issueSessionToken, loadAppAuth, setAppPassword, verifyAppPassword } from './appAuth';
 import { decryptBackup, describePassphrasePolicy, encryptBackup, isStrongPassphrase, type BackupPayload } from '../crypto/backup';
 import { appendAuditEvent, computeAuditState, fingerprintFromRequest, fingerprintIdentity } from './backupAudit';
@@ -70,6 +71,7 @@ function broadcast(event: SyncProgressEvent): void {
         if (!res.destroyed && !res.writableEnded) res.write(data);
     }
     appendSyncLog(event);
+    appendErrorLog(event);
 }
 
 // Per-file progress bars are only shown for files >= this size (bytes); 0 disables
@@ -127,7 +129,16 @@ interface PendingDeletion {
 }
 let pendingDeletion: PendingDeletion | null = null;
 
-async function runSync(pairId: string, allowDeletions = false): Promise<boolean> {
+// Events that are pure per-file progress and should be hidden during the
+// follow-up finalization pass (it mostly re-hashes already-synced files, so its
+// counters would otherwise paint a confusing "everything skipped" picture).
+function isFollowUpNoise(event: SyncProgressEvent): boolean {
+    if (event.type === 'walk' || event.type === 'sync-plan' || event.type === 'overall' || event.type === 'transfer') return true;
+    if (event.type === 'item') return event.action !== 'skip-error' && event.action !== 'conflict';
+    return false;
+}
+
+async function runSync(pairId: string, allowDeletions = false, followUp = false): Promise<boolean> {
     if (syncing || paused) return false;
     syncing = true;
     stopRequested = false;
@@ -149,7 +160,16 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
         const driveFolderUid = await findOrCreateFolderPath(session.sdk, root.uid, pair.driveFolderName);
         db.upsertPair({ ...pair, driveFolderUid });
 
-        const onProgress: ProgressHandler = (event) => broadcast(event);
+        const onProgress: ProgressHandler = followUp
+            ? (event) => {
+                  if (event.type === 'sync-start') {
+                      broadcast({ ...event, followUp: true });
+                      return;
+                  }
+                  if (isFollowUpNoise(event)) return;
+                  broadcast(event);
+              }
+            : broadcast;
         const summary = await syncOnce({
             sdk: session.sdk,
             pairId,
@@ -164,7 +184,7 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
             allowDeletions,
         });
         db.markSynced(pairId);
-        broadcast({ type: 'sync-complete', pairId, summary });
+        broadcast({ type: 'sync-complete', pairId, summary, followUp });
         if (firstSync) followUpPairId = pairId;
         return true;
     } catch (error) {
@@ -190,7 +210,7 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
         if (followUp) {
             broadcast({ type: 'log', message: 'Initial sync complete — running a follow-up sync to populate dedupe data and catch any changes made during the initial pass.' });
             setImmediate(() => {
-                void runSync(followUp);
+                void runSync(followUp, false, true);
             });
         }
     }
@@ -916,6 +936,36 @@ app.get('/api/logs/download', requireAuth, (_req, res) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="sync.log"');
     createReadStream(p).pipe(res);
+});
+
+// ---- error log: errors / conflicts / warnings only (survives rotation) ----
+
+app.get('/api/errorlog/status', requireAuth, (_req, res) => {
+    res.json(errorLogStatus());
+});
+
+app.get('/api/errorlog', requireAuth, (_req, res) => {
+    res.json({ entries: readErrorLog() });
+});
+
+app.post('/api/errorlog/reset', requireAuth, (_req, res) => {
+    setLastReset(Date.now());
+    res.json({ ok: true });
+});
+
+app.post('/api/errorlog/clear', requireAuth, (_req, res) => {
+    clearErrorLog();
+    res.json({ ok: true });
+});
+
+app.get('/api/errorlog/download', requireAuth, (_req, res) => {
+    const entries = readErrorLog();
+    const body = entries
+        .map((e) => `[${new Date(e.ts).toISOString()}] [${e.severity.toUpperCase()}] ${e.message}`)
+        .join('\n');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="error-log-${new Date().toISOString().slice(0, 10)}.txt"`);
+    res.send(body);
 });
 
 // ---- encrypted backup config (create / download / status / acknowledge) ----

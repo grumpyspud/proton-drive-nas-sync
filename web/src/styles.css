@@ -1592,3 +1592,103 @@ select.select:focus {
     color: var(--ink-400);
 }
 
+/* ---------- Error log ---------- */
+.errorlog-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 0;
+}
+.errorlog-body {
+    padding: 12px;
+    background: var(--field-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow-y: auto;
+    max-height: 60vh;
+    min-height: 200px;
+}
+.errorlog-body ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.errorlog-body li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 5px 8px;
+    border-left: 3px solid transparent;
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+}
+.errorlog-ts {
+    color: var(--ink-400);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.errorlog-msg {
+    word-break: break-word;
+    flex: 1;
+    min-width: 0;
+}
+.errorlog-error {
+    border-left-color: var(--danger);
+}
+.errorlog-error .errorlog-msg {
+    color: var(--alert-fg);
+}
+.errorlog-conflict {
+    border-left-color: #e0883a;
+}
+.errorlog-conflict .errorlog-msg {
+    color: #e0883a;
+}
+.errorlog-warning {
+    border-left-color: var(--warning);
+}
+.errorlog-warning .errorlog-msg {
+    color: var(--warning);
+}
+.tag-errorlog-error {
+    background: var(--alert-bg);
+    color: var(--alert-fg);
+}
+.tag-errorlog-conflict {
+    background: rgba(224, 136, 58, 0.16);
+    color: #e0883a;
+}
+.tag-errorlog-warning {
+    background: var(--tag-warn-bg);
+    color: var(--tag-warn-fg);
+}
+
+/* Logs button: red = unseen errors, yellow = unseen warnings/conflicts */
+.btn-logs-red {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: var(--alert-bg);
+}
+.btn-logs-red:hover:not(:disabled) {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: var(--alert-bg);
+}
+.btn-logs-yellow {
+    color: var(--warning);
+    border-color: var(--warning);
+    background: var(--tag-warn-bg);
+}
+.btn-logs-yellow:hover:not(:disabled) {
+    color: var(--warning);
+    border-color: var(--warning);
+    background: var(--tag-warn-bg);
+}
+

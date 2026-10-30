@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getLocalStorage, getSettings, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
-import type { DeletionHold, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
+import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, listPairs, listTrash, logout, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
+import type { DeletionHold, ErrorLogStatus, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { LogsModal } from './LogsModal';
+import { ErrorLogModal } from './ErrorLogModal';
 import { BackupModal } from './BackupModal';
 import { DuplicatesModal } from './DuplicatesModal';
 import { CreatePairModal } from './CreatePairModal';
@@ -44,6 +45,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [transferConcurrency, setTransferConcurrency] = useState(3);
     const [showCreatePair, setShowCreatePair] = useState(false);
     const [showActivityLog, setShowActivityLog] = useState(false);
+    const [showErrorLog, setShowErrorLog] = useState(false);
+    const [errorLogStatus, setErrorLogStatus] = useState<ErrorLogStatus | null>(null);
     const [openMenu, setOpenMenu] = useState<'logs' | 'settings' | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -87,6 +90,24 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         }
     }, []);
 
+    const loadErrorStatus = useCallback(async () => {
+        try {
+            setErrorLogStatus(await getErrorLogStatus());
+        } catch {
+            /* non-critical */
+        }
+    }, []);
+
+    useEffect(() => {
+        void loadErrorStatus();
+        const t = setInterval(() => void loadErrorStatus(), 15000);
+        return () => clearInterval(t);
+    }, [loadErrorStatus]);
+
+    const hasUnseenErrors = (errorLogStatus?.unseenErrors ?? 0) > 0;
+    const hasUnseenWarnings = ((errorLogStatus?.unseenConflicts ?? 0) + (errorLogStatus?.unseenWarnings ?? 0)) > 0;
+    const logsButtonClass = hasUnseenErrors ? 'btn btn-ghost btn-logs-red' : hasUnseenWarnings ? 'btn btn-ghost btn-logs-yellow' : 'btn btn-ghost';
+
     useEffect(() => {
         void reload();
         void loadStorage();
@@ -108,9 +129,13 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                 case 'sync-start':
                     setSyncing(true);
                     setError(null);
-                    setSummary(null);
-                    setItems([]);
-                    setTotalItems(0);
+                    if (!ev.followUp) {
+                        // A follow-up pass is an internal finalization step; keep
+                        // the initial sync's summary and activity feed visible.
+                        setSummary(null);
+                        setItems([]);
+                        setTotalItems(0);
+                    }
                     setActive(new Map());
                     setOverall(null);
                     setDeletionHold(null);
@@ -170,17 +195,19 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     break;
                 case 'sync-complete':
                     setSyncing(false);
-                    setSummary(ev.summary);
+                    if (!ev.followUp) setSummary(ev.summary);
                     setActive(new Map());
                     setOverall(null);
                     void loadStorage();
                     void loadLocalStorage();
+                    void loadErrorStatus();
                     break;
                 case 'sync-error':
                     setSyncing(false);
                     setError(ev.message);
                     setActive(new Map());
                     setOverall(null);
+                    void loadErrorStatus();
                     break;
                 case 'sync-paused':
                     setPaused(true);
@@ -339,7 +366,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     </button>
                     <div className="menu-group" ref={menuRef}>
                         <div className="menu-wrap">
-                            <button className="btn btn-ghost" onClick={() => setOpenMenu(openMenu === 'logs' ? null : 'logs')} title="Logs">
+                            <button className={logsButtonClass} onClick={() => setOpenMenu(openMenu === 'logs' ? null : 'logs')} title="Logs">
                                 Logs ▾
                             </button>
                             {openMenu === 'logs' && (
@@ -349,6 +376,9 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                     </button>
                                     <button className="menu-item" onClick={() => { setShowActivityLog(true); setOpenMenu(null); }}>
                                         Activity log
+                                    </button>
+                                    <button className="menu-item" onClick={() => { setShowErrorLog(true); setOpenMenu(null); }}>
+                                        Error log
                                     </button>
                                 </div>
                             )}
@@ -535,6 +565,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
             {trashPair && <TrashModal pair={trashPair} onClose={() => setTrashPair(null)} />}
             {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
             {showActivityLog && <ActivityLogModal items={items} totalItems={totalItems} onClose={() => setShowActivityLog(false)} />}
+            {showErrorLog && <ErrorLogModal onClose={() => { setShowErrorLog(false); void loadErrorStatus(); }} />}
             {showCreatePair && <CreatePairModal onCreated={reload} onClose={() => setShowCreatePair(false)} />}
             {dedupePair && <DuplicatesModal pair={dedupePair} onClose={() => setDedupePair(null)} />}
             {showBackup && <BackupModal onClose={() => setShowBackup(false)} />}

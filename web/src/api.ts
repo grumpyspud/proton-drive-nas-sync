@@ -1,4 +1,4 @@
-import type { DirListing, DuplicateGroup, IgnoredGroup, LocalVolume, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
+import type { DirListing, DuplicateGroup, ErrorLogEntry, ErrorLogStatus, IgnoredGroup, LocalVolume, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
 
 function getDeviceId(): string {
     try {
@@ -147,6 +147,22 @@ export interface LogQueryResult {
 
 export function getLogs(q: string, limit: number, offset: number): Promise<LogQueryResult> {
     return request(`/api/logs?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`);
+}
+
+export function getErrorLogStatus(): Promise<ErrorLogStatus> {
+    return request<ErrorLogStatus>('/api/errorlog/status');
+}
+
+export function getErrorLog(): Promise<{ entries: ErrorLogEntry[] }> {
+    return request<{ entries: ErrorLogEntry[] }>('/api/errorlog');
+}
+
+export function resetErrorLog(): Promise<{ ok: boolean }> {
+    return request('/api/errorlog/reset', { method: 'POST' });
+}
+
+export function clearErrorLog(): Promise<{ ok: boolean }> {
+    return request('/api/errorlog/clear', { method: 'POST' });
 }
 
 export function getStorage(): Promise<StorageInfo> {
