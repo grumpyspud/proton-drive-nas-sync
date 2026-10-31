@@ -102,14 +102,18 @@ are never written to disk. On restart the app resumes the session automatically.
 | `PDN_STATE_DB` | `<config>/sync.db` | Override the sync database path. |
 | `PDN_WEB_DIR` | `<app>/web/dist` | Override the static frontend directory. |
 | `PROTON_DRIVE_BASE_URL` | `drive-api.proton.me` | Custom API endpoint (rarely needed). |
-| `PDN_CACHE` | `memory` | Drive SDK cache backend: `memory` (unbounded in-memory, default), `null` (disabled - every scan is cold), or `lru` (bounded least-recently-used). |
-| `PDN_CACHE_LRU_MAX` | `10000` | Max entries the `lru` cache keeps (only when `PDN_CACHE=lru`). Drive entities average ~100 KB each, so 10,000 ≈ 1 GB; raise on big-RAM hosts, lower on constrained ones. |
+| `PDN_CACHE` | `memory` | Drive SDK entity-cache backend: `memory` (unbounded in-memory, default), `null` (disabled - every scan is cold), `lru` (bounded least-recently-used), or `disk` (persistent on-disk cache with an in-memory LRU front). |
+| `PDN_CACHE_LRU_MAX` | `10000` | Max entries for `lru`, or the size of the RAM front for `disk` (0 = none). Drive entities average ~100 KB each, so 10,000 ≈ 1 GB; raise on big-RAM hosts, lower on constrained ones. |
+| `PDN_CACHE_DIR` | `<config>/cache` | Directory for the disk-backed cache (only when `PDN_CACHE=disk`). Mount fast storage (NVMe) here. |
 
 The default `memory` cache holds the whole Drive tree in RAM so re-scans are
 fast, but on a large tree (e.g. ~173k files) that costs ~18 GB. On a smaller
 host, set `PDN_CACHE=lru` and cap `PDN_CACHE_LRU_MAX` to bound memory (evicted
-entries are re-fetched on the next scan), or `PDN_CACHE=null` to use almost no
-cache at all (every scan re-walks Drive).
+entries are re-fetched on the next scan), `PDN_CACHE=null` to use almost no
+cache at all (every scan re-walks Drive), or `PDN_CACHE=disk` to write entities
+to disk and keep only a bounded `PDN_CACHE_LRU_MAX`-sized slice in RAM. The disk
+cache also survives restarts, so re-scans after a restart start warm instead of
+cold. In every mode except `null` the small crypto-key cache stays in memory.
 
 ## HTTPS
 
