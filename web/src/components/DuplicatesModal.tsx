@@ -33,6 +33,7 @@ export function DuplicatesModal({ pair, onClose }: Props) {
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
+    const [batchBusy, setBatchBusy] = useState(false);
     const [keep, setKeep] = useState<Record<string, boolean>>({});
     const [ignored, setIgnored] = useState<IgnoredGroup[]>([]);
 
@@ -122,6 +123,32 @@ export function DuplicatesModal({ pair, onClose }: Props) {
         }
     }
 
+    // Groups with a partial "keep" selection (1..n-1 checked) contribute their
+    // unchecked files to one batch recycle. Zero-checked and all-checked groups
+    // are skipped (everything in them is kept).
+    const batchRelPaths = groups.flatMap((g) => {
+        const p = prefix(g.sha1);
+        const checked = g.files.filter((f) => keep[p + f.relPath]).length;
+        if (checked < 1 || checked >= g.files.length) return [];
+        return g.files.filter((f) => !keep[p + f.relPath]).map((f) => f.relPath);
+    });
+
+    async function doRecycleAll() {
+        if (batchRelPaths.length === 0) return;
+        setBatchBusy(true);
+        setError(null);
+        setNotice(null);
+        try {
+            const res = await recycleDuplicates(pair.id, batchRelPaths);
+            setNotice(`Recycled ${res.recycled} file(s) locally — Drive copies will be trashed on the next sync.`);
+            await scan();
+        } catch (err) {
+            setError((err as Error).message);
+        } finally {
+            setBatchBusy(false);
+        }
+    }
+
     return (
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
@@ -163,6 +190,15 @@ export function DuplicatesModal({ pair, onClose }: Props) {
                     <div className="muted">No duplicate files found.</div>
                 ) : (
                     <div className="dupe-body">
+                        <div className="dupe-batch">
+                            <button
+                                className="btn btn-primary"
+                                disabled={batchRelPaths.length === 0 || batchBusy || !!busy}
+                                onClick={() => void doRecycleAll()}
+                            >
+                                {batchBusy ? 'Recycling…' : `Recycle all unselected (${batchRelPaths.length})`}
+                            </button>
+                        </div>
                         {groups.map((g) => {
                             const p = prefix(g.sha1);
                             const checkedCount = g.files.filter((f) => keep[p + f.relPath]).length;
@@ -187,10 +223,10 @@ export function DuplicatesModal({ pair, onClose }: Props) {
                                         ))}
                                     </ul>
                                     <div className="dupe-actions">
-                                        <button className="btn btn-primary btn-sm" disabled={!canRecycle || !!busyHere} onClick={() => void doRecycle(g)}>
+                                        <button className="btn btn-primary btn-sm" disabled={!canRecycle || !!busyHere || batchBusy} onClick={() => void doRecycle(g)}>
                                             Recycle {unselectedCount} unselected
                                         </button>
-                                        <button className="btn btn-ghost btn-sm" disabled={!!busyHere} onClick={() => void doIgnore(g)}>
+                                        <button className="btn btn-ghost btn-sm" disabled={!!busyHere || batchBusy} onClick={() => void doIgnore(g)}>
                                             Ignore
                                         </button>
                                     </div>

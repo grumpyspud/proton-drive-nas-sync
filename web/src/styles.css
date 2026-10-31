@@ -1567,6 +1567,17 @@ select.select:focus {
     overflow-y: auto;
     max-height: 55vh;
 }
+.dupe-batch {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    margin-bottom: 8px;
+    background: var(--surface);
+}
 
 .dupe-ignored {
     margin-top: 14px;
