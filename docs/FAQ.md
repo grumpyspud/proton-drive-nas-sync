@@ -153,9 +153,12 @@ Each folder pair is a three-way reconcile, run on a schedule:
 
 ### What happens on a conflict?
 
-If both sides changed the same file since the last sync, the app keeps the
-**local** copy and preserves the **Drive** version alongside it as
-`filename.conflict-<timestamp>`. Nothing is silently overwritten or lost.
+If the same file changes in *both* places between syncs, the app does **not** pick
+a winner. It preserves the **Drive** version next to the local file as
+`filename.conflict-<timestamp>`, records the conflict, and freezes that one file
+(skipped in later syncs) until you resolve it. Nothing is silently overwritten or
+lost — you review both versions in the pair's **Conflicts** panel (see the user
+guide) and choose which to keep.
 
 ### What protects against accidental mass deletion?
 
@@ -219,8 +222,9 @@ Be aware of these before relying on it:
   trash is a manual step.
 - **No file version history.** Sync mirrors the *current* state; the trash is
   the recovery path, not snapshots.
-- **No automatic conflict merge.** Conflicts keep both copies (local wins, the
-  other saved as `.conflict-<ts>`); there is no content merge.
+- **No automatic conflict merge.** A conflict keeps both copies — the Drive version
+  is saved as `.conflict-<ts>` and the file is frozen until you pick a winner in the
+  **Conflicts** panel; there is no content merge.
 - **Dedupe is per-pair and local-only.** It finds duplicates within one pair's
   local folder, on demand — not across pairs, and not on the Drive side.
 - **"Monthly" means ~30 days**, a fixed interval, not a calendar month.

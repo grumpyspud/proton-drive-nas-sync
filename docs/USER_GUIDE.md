@@ -131,6 +131,40 @@ can **Reset** an individual group or **Reset all** to bring them back into scans
 
 ---
 
+## Conflicts
+
+A **conflict** happens when the same file changes in *both* places between syncs —
+for example, you edit `notes.txt` on the NAS and a different version of `notes.txt`
+also appears in Proton Drive. The app never guesses which one you want.
+
+On the next sync it:
+
+- **preserves the Drive version** as `notes.txt.conflict-<timestamp>` next to the
+  local file,
+- **records the conflict** so it isn't forgotten, and
+- **freezes that one file** — it's skipped in later syncs until you decide. The rest
+  of the pair keeps syncing normally.
+
+A pair shows an orange **Conflicts (N)** button (next to **Dedupe Scan**) only when
+it has unresolved conflicts. Click it to review them:
+
+![Conflicts](screenshots/23-conflicts.png)
+
+Each conflict lists both versions — **Local (NAS)** and **Drive (Proton)** — with
+size, last-modified date, and content hash (SHA-1), so you can tell which is which.
+Select the version to keep and click **Keep selected**:
+
+- **Keep Local (NAS)** — re-uploads the local copy to Drive, then recycles the
+  preserved `.conflict-<ts>` copy to `.pdn-trash`.
+- **Keep Drive (Proton)** — recycles the local copy to `.pdn-trash` and restores
+  the `.conflict-<ts>` copy into place (Drive already holds it, so nothing is
+  re-uploaded).
+
+Either way the loser is only *recycled* to `.pdn-trash`, never hard-deleted, so you
+can recover it from the pair's **Trash** view if you change your mind.
+
+---
+
 ## Trash (recycle bin)
 
 Deletions never happen immediately — files are recycled first. Click **Trash** on a
