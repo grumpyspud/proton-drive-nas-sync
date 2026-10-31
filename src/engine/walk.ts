@@ -98,6 +98,9 @@ export async function walkLocalTree(root: string, options: WalkLocalOptions = {}
                     await onPartial?.(relPath, abs);
                     continue;
                 }
+                // Resolved-conflict copies (`<name>.conflict-<ts>`) are preserved
+                // Drive versions left for manual review — never re-synced.
+                if (d.name.includes('.conflict-')) continue;
                 const st = await stat(abs);
                 files++;
                 entries.push({ relPath, absPath: abs, kind: 'file', size: st.size, mtimeMs: st.mtimeMs });

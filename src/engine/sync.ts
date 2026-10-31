@@ -81,6 +81,17 @@ function driveSha1(fingerprint: string | null | undefined): string {
     return (fingerprint ?? '').split('|')[0] ?? '';
 }
 
+/** True when the local file's content matches the Drive file's.
+ *  Primary: SHA-1 (present only when the uploader declared `expectedSha1`).
+ *  Fallback for files synced to Drive by another tool (no declared SHA-1):
+ *  compare size — same size is treated as identical, so adopting an
+ *  already-populated Drive doesn't churn every file into a spurious conflict. */
+function contentMatches(localSha1: string, localSize: number, driveFp: string | null | undefined, driveNode: DriveEntry['node']): boolean {
+    const sha = driveSha1(driveFp);
+    if (sha) return localSha1 === sha;
+    return localSize === driveSize(driveNode);
+}
+
 /**
  * One bidirectional sync cycle for a folder pair. Three-way reconcile of
  * local vs Drive vs last-synced (DB). Deletions are soft on BOTH sides
@@ -409,7 +420,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
 
             // -- both new (first-sync collision) --
             if (inLocal && inDrive && !inDb) {
-                if (localSha1 && driveSha1(driveFp) && localSha1 === driveSha1(driveFp)) {
+                if (localSha1 && contentMatches(localSha1, L.size, driveFp, D.node)) {
                     db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                     result.skipped++;
                     onProgress?.({ type: 'item', action: 'skip', relPath });
@@ -440,7 +451,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                     onProgress?.({ type: 'item', action: 'download', relPath });
                     log(`downloaded ${relPath}`);
                 } else if (localChanged && driveChanged) {
-                    if (localSha1 && driveSha1(driveFp) && localSha1 === driveSha1(driveFp)) {
+                    if (localSha1 && contentMatches(localSha1, L.size, driveFp, D.node)) {
                         db.upsertNode({ pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1, localSize: L.size, localMtime: L.mtimeMs });
                         result.skipped++;
                         onProgress?.({ type: 'item', action: 'skip', relPath });
