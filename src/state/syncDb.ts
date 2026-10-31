@@ -309,6 +309,21 @@ export class SyncDB {
         return rows.map(toNode);
     }
 
+    /** Async variant of allNodes: streams the pair's rows in batches and yields
+     *  to the event loop every `yieldEvery` rows, so a very large pair can't hold
+     *  the single-threaded event loop (and block /api/health) for seconds at a time.
+     *  Returns the same shape as allNodes. */
+    async allNodesAsync(pairId: string, yieldEvery = 2000): Promise<SyncNode[]> {
+        const stmt = this.db.prepare('SELECT * FROM nodes WHERE pair_id = ? ORDER BY rel_path');
+        const out: SyncNode[] = [];
+        let n = 0;
+        for (const row of stmt.iterate(pairId) as unknown as Iterable<NodeRow>) {
+            out.push(toNode(row));
+            if (++n % yieldEvery === 0) await new Promise<void>((r) => setImmediate(r));
+        }
+        return out;
+    }
+
     /** Files that have been pulled from Drive but never hashed locally
      *  (local_sha1 IS NULL): the set a backfill pass must hash so the
      *  dedupe scan can see them. */

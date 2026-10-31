@@ -30,6 +30,8 @@ export type SyncProgressEvent =
     | { type: 'sync-start'; pairId: string; localDir: string; driveFolderName: string }
     | { type: 'walk'; side: 'local' | 'drive'; files: number; folders: number }
     | { type: 'sync-plan'; totalBytes: number; totalFiles: number }
+    | { type: 'preparing'; files: number }
+    | { type: 'hashing'; relPath: string; hashed: number; total: number }
     | {
           type: 'transfer';
           relPath: string;

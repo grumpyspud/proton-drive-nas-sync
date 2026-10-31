@@ -40,6 +40,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [showLogs, setShowLogs] = useState(false);
     const [overall, setOverall] = useState<OverallState | null>(null);
     const [scanState, setScanState] = useState<{ side: 'local' | 'drive'; files: number; folders: number } | null>(null);
+    const [preparing, setPreparing] = useState(false);
+    const [verifying, setVerifying] = useState<{ relPath: string; hashed: number; total: number } | null>(null);
     const [deletionHold, setDeletionHold] = useState<DeletionHold | null>(null);
     const [showBackup, setShowBackup] = useState(false);
     const [dedupePair, setDedupePair] = useState<Pair | null>(null);
@@ -179,12 +181,21 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     setOverall(null);
                     setDeletionHold(null);
                     setScanState(null);
+                    setPreparing(false);
+                    setVerifying(null);
                     break;
                 case 'walk':
                     setScanState({ side: ev.side, files: ev.files, folders: ev.folders });
                     break;
+                case 'preparing':
+                    setPreparing(true);
+                    break;
                 case 'sync-plan':
+                    setPreparing(false);
                     setOverall({ transferredBytes: 0, totalBytes: ev.totalBytes, percent: 0, speedBps: 0, filesDone: 0, totalFiles: ev.totalFiles });
+                    break;
+                case 'hashing':
+                    setVerifying({ relPath: ev.relPath, hashed: ev.hashed, total: ev.total });
                     break;
                 case 'hash-progress':
                     if (hashingRef.current) setHashingPair({ pairId: ev.pairId, done: ev.done, total: ev.total });
@@ -523,11 +534,19 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
 
                         {overall && (overall.totalFiles > 0 || overall.totalBytes > 0) && <OverallBar {...overall} />}
 
+                        {syncing && verifying && active.size === 0 && (
+                            <div className="muted">
+                                Verifying {verifying.relPath} · {verifying.hashed.toLocaleString()}/{verifying.total.toLocaleString()} files
+                            </div>
+                        )}
+
                         {[...active.values()].map((t) => (
                             <ProgressBar key={t.relPath} {...t} />
                         ))}
                         {syncing && overall == null && active.size === 0 && (
-                            scanState ? (
+                            preparing ? (
+                                <div className="muted">Preparing…</div>
+                            ) : scanState ? (
                                 <div className="muted">
                                     Scanning {scanState.side === 'local' ? 'local folder' : 'Proton Drive'} ~{' '}
                                     {scanState.files.toLocaleString()} files · {scanState.folders.toLocaleString()} folders

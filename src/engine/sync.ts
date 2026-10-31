@@ -118,6 +118,10 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     let filesDone = 0;
     let totalBytes = 0;
     let totalFiles = 0;
+    // Counts local files whose SHA-1 was (re)computed this cycle, so the UI can
+    // show a "verifying" signal instead of a frozen bar during the silent hash
+    // phase (first sync / many changed files).
+    let filesHashed = 0;
     // Overall rate is sampled from the container's NIC counters (/proc/net/dev),
     // not the backend's per-tick estimate: that spiked to "~"/"1.0 GB/s" because
     // progress callbacks fire in bursts. The NIC counter is stable ground truth.
@@ -154,6 +158,18 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             filesDone,
             totalFiles,
         });
+    };
+
+    /** Emit a throttled "hashing" signal (file being verified + running count).
+     *  Throttled like emitOverall so a flood of small files can't drown the SSE
+     *  stream with one event per file. */
+    let lastHashingAt = 0;
+    const emitHashing = (relPath: string): void => {
+        if (!onProgress) return;
+        const now = Date.now();
+        if (now - lastHashingAt < 100) return;
+        lastHashingAt = now;
+        onProgress({ type: 'hashing', relPath, hashed: filesHashed, total: totalFiles });
     };
 
     onProgress?.({ type: 'sync-start', pairId, localDir, driveFolderName: options.driveFolderName ?? '' });
@@ -201,9 +217,14 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         onProgress?.({ type: 'log', message: msg });
     }
 
+    // Scan is done: enter the prepare phase (load last-synced state, reconcile
+    // folders, plan the file set). Emitted before the now-yielding DB load so the
+    // UI can switch from "Scanning" to "Preparing" instead of looking stuck.
+    onProgress?.({ type: 'preparing', files: local.length + drive.length });
+
     const localByRel = new Map(local.map((e) => [e.relPath, e]));
     const driveByRel = new Map(drive.map((e) => [e.relPath, e]));
-    const stored = db.allNodes(pairId);
+    const stored = await db.allNodesAsync(pairId);
     const storedByRel = new Map(stored.map((n) => [n.relPath, n]));
 
     // Record any `.conflict-*` copies the walk found (orphans from before this
@@ -297,8 +318,10 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     for (const n of stored) if (n.kind === 'folder') folderRelPaths.add(n.relPath);
 
     const sortedFolders = [...folderRelPaths].sort((a, b) => a.split('/').length - b.split('/').length);
+    let folderI = 0;
     for (const relPath of sortedFolders) {
         checkAbort();
+        if (++folderI % 500 === 0) await new Promise<void>((r) => setImmediate(r));
         const L = localByRel.get(relPath);
         const D = driveByRel.get(relPath);
         const S = storedByRel.get(relPath);
@@ -356,7 +379,9 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     //      stored hash/fingerprint means "unknown, not changed" (the reconcile
     //      fills it in-place on the follow-up sync without re-transferring), so
     //      a second sync that only re-hashes doesn't inflate `totalBytes`. ----
+    let planI = 0;
     for (const relPath of fileRelPaths) {
+        if (++planI % 2000 === 0) await new Promise<void>((r) => setImmediate(r));
         if (isUnderDeletedFolder(relPath)) continue;
         const L = localByRel.get(relPath);
         const D = driveByRel.get(relPath);
@@ -430,6 +455,8 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 if (S && S.localSha1 && S.localSize === L.size && S.localMtime === L.mtimeMs) {
                     localSha1 = S.localSha1;
                 } else {
+                    filesHashed++;
+                    emitHashing(relPath);
                     localSha1 = await sha1OfFile(L.absPath);
                 }
             }
