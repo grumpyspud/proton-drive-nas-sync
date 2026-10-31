@@ -102,6 +102,14 @@ are never written to disk. On restart the app resumes the session automatically.
 | `PDN_STATE_DB` | `<config>/sync.db` | Override the sync database path. |
 | `PDN_WEB_DIR` | `<app>/web/dist` | Override the static frontend directory. |
 | `PROTON_DRIVE_BASE_URL` | `drive-api.proton.me` | Custom API endpoint (rarely needed). |
+| `PDN_CACHE` | `memory` | Drive SDK cache backend: `memory` (unbounded in-memory, default), `null` (disabled - every scan is cold), or `lru` (bounded least-recently-used). |
+| `PDN_CACHE_LRU_MAX` | `10000` | Max entries the `lru` cache keeps (only when `PDN_CACHE=lru`). Drive entities average ~100 KB each, so 10,000 ≈ 1 GB; raise on big-RAM hosts, lower on constrained ones. |
+
+The default `memory` cache holds the whole Drive tree in RAM so re-scans are
+fast, but on a large tree (e.g. ~173k files) that costs ~18 GB. On a smaller
+host, set `PDN_CACHE=lru` and cap `PDN_CACHE_LRU_MAX` to bound memory (evicted
+entries are re-fetched on the next scan), or `PDN_CACHE=null` to use almost no
+cache at all (every scan re-walks Drive).
 
 ## HTTPS
 
