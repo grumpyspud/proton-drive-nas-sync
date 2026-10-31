@@ -134,6 +134,22 @@ export interface IgnoredGroup {
     files: string[];
 }
 
+/** A pending sync conflict: the local version (relPath) vs the preserved Drive
+ *  version (conflictPath, a `.conflict-<ts>` copy). */
+export interface Conflict {
+    pairId: string;
+    relPath: string;
+    conflictPath: string;
+    driveUid: string | null;
+    localSha1: string | null;
+    localSize: number | null;
+    localMtime: number | null;
+    conflictSha1: string | null;
+    conflictSize: number | null;
+    conflictMtime: number | null;
+    createdAt: number;
+}
+
 export type ErrorSeverity = 'error' | 'conflict' | 'warning';
 
 export interface ErrorLogEntry {

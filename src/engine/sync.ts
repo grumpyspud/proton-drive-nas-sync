@@ -8,7 +8,7 @@ import type { ProgressHandler } from './progress';
 import { NetRateMeter } from './netrate';
 import { assertSourceAvailable, checkDeletionTripwire, DeletionTripwireError } from './safety';
 import { drain } from './util';
-import { driveSize, walkDriveTree, walkLocalTree } from './walk';
+import { driveMtime, driveSize, walkDriveTree, walkLocalTree } from './walk';
 import type { DriveEntry, LocalEntry } from './walk';
 
 export interface SyncOptions {
@@ -164,9 +164,13 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     // 2. Walk both sides, collecting leftover *.pdn-part temp files for cleanup.
     const localPartials: Array<{ relPath: string; absPath: string }> = [];
     const drivePartials: Array<{ relPath: string; uid: string }> = [];
+    const orphanConflicts: Array<{ relPath: string; absPath: string; size: number; mtimeMs: number }> = [];
     const local = await walkLocalTree(localDir, {
         onPartial: (relPath, absPath) => {
             localPartials.push({ relPath, absPath });
+        },
+        onConflict: (relPath, absPath, size, mtimeMs) => {
+            orphanConflicts.push({ relPath, absPath, size, mtimeMs });
         },
         onProgress: (stats) => onProgress?.({ type: 'walk', side: 'local', ...stats }),
     });
@@ -202,6 +206,32 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     const stored = db.allNodes(pairId);
     const storedByRel = new Map(stored.map((n) => [n.relPath, n]));
 
+    // Record any `.conflict-*` copies the walk found (orphans from before this
+    // feature or a prior run) so they surface in the Conflicts panel. Idempotent:
+    // a copy already in the table is left alone.
+    for (const oc of orphanConflicts) {
+        if (db.getConflict(pairId, oc.relPath)) continue;
+        const canonRel = oc.relPath.replace(/\.conflict-\d+$/, '');
+        const node = storedByRel.get(canonRel);
+        db.upsertConflict({
+            pairId,
+            relPath: canonRel,
+            conflictPath: oc.relPath,
+            driveUid: node?.driveUid ?? null,
+            localSha1: node?.localSha1 ?? null,
+            localSize: node?.localSize ?? null,
+            localMtime: node?.localMtime ?? null,
+            conflictSha1: null,
+            conflictSize: oc.size,
+            conflictMtime: oc.mtimeMs,
+            createdAt: oc.mtimeMs,
+        });
+    }
+
+    // Files with an unresolved conflict are frozen this cycle (skipped, not
+    // transferred) until the user resolves them in the Conflicts panel.
+    const pendingConflictRelPaths = new Set(db.listConflicts(pairId).map((c) => c.relPath));
+
     const driveDeletions: DriveDeletion[] = [];
     const localDeletions: LocalDeletion[] = [];
     const deletedFolderPrefixes = new Set<string>();
@@ -232,28 +262,32 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         return { sha1: info.sha1, size: info.size, mtimeMs: st.mtimeMs };
     }
 
-    // Resolve a conflict: local wins, but the Drive version is preserved
-    // locally as `<relPath>.conflict-<ts>` so nothing is lost.
-    async function resolveConflict(relPath: string, D: DriveEntry, L: LocalEntry, localSha1: string): Promise<void> {
+    // Record a conflict for manual review: the Drive version is preserved
+    // locally as `<relPath>.conflict-<ts>`, but nothing is uploaded or
+    // overwritten — both sides stay put until the user picks a winner in the
+    // Conflicts panel. The file is frozen (skipped) until then.
+    async function recordConflict(relPath: string, D: DriveEntry, L: LocalEntry, localSha1: string): Promise<void> {
         const ts = Date.now();
-        const conflictPath = path.join(localDir, `${relPath}.conflict-${ts}`);
+        const conflictRel = `${relPath}.conflict-${ts}`;
+        const conflictPath = path.join(localDir, conflictRel);
         await mkdir(path.dirname(conflictPath), { recursive: true });
-        await downloadFile(sdk, D.uid, conflictPath, transferReporter(relPath, 'download'));
+        const info = await downloadFile(sdk, D.uid, conflictPath, transferReporter(relPath, 'download'));
         inFlightBytes.delete(relPath);
-        completedBytes += driveSize(D.node);
-        const uid = await uploadFileRevision(sdk, D.uid, L.absPath, transferReporter(relPath, 'upload'), localSha1);
-        finishTransfer(relPath, L.size);
-        db.upsertNode({
+        completedBytes += info.size;
+        db.upsertConflict({
             pairId,
             relPath,
-            kind: 'file',
-            driveUid: uid,
-            driveFingerprint: null,
+            conflictPath: conflictRel,
+            driveUid: D.uid,
             localSha1,
             localSize: L.size,
             localMtime: L.mtimeMs,
+            conflictSha1: info.sha1,
+            conflictSize: info.size,
+            conflictMtime: driveMtime(D.node),
+            createdAt: ts,
         });
-        log(`conflict on ${relPath}: kept local, saved Drive version as ${path.basename(conflictPath)}`);
+        log(`conflict on ${relPath}: Drive version saved as ${path.basename(conflictRel)} — pending review`);
     }
 
     // ---- Folders (create both ways; defer deletions as a unit) ----
@@ -380,6 +414,13 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 return;
             }
 
+            // Frozen by an unresolved conflict: skip (still counts as processed).
+            if (pendingConflictRelPaths.has(relPath)) {
+                result.skipped++;
+                onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'pending review — resolve in the Conflicts panel' });
+                return;
+            }
+
             const parentRel = path.posix.dirname(relPath);
             const parentUid = parentRel === '.' ? driveFolderUid : driveByRel.get(parentRel)?.uid;
 
@@ -425,9 +466,9 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                     result.skipped++;
                     onProgress?.({ type: 'item', action: 'skip', relPath });
                 } else {
-                    await resolveConflict(relPath, D, L, localSha1!);
+                    await recordConflict(relPath, D, L, localSha1!);
                     result.conflicts++;
-                    onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'kept local, Drive version preserved' });
+                    onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'Drive version preserved — pending review' });
                 }
                 return;
             }
@@ -456,9 +497,9 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                         result.skipped++;
                         onProgress?.({ type: 'item', action: 'skip', relPath });
                     } else {
-                        await resolveConflict(relPath, D, L, localSha1!);
+                        await recordConflict(relPath, D, L, localSha1!);
                         result.conflicts++;
-                        onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'kept local, Drive version preserved' });
+                        onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'Drive version preserved — pending review' });
                     }
                 } else {
                     // unchanged — fill any null fingerprints with observed values

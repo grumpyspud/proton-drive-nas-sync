@@ -16,6 +16,7 @@ import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce, SyncAbortedError, DEFAULT_TRANSFER_CONCURRENCY, MAX_TRANSFER_CONCURRENCY } from '../engine/sync';
 import { DeletionTripwireError } from '../engine/safety';
 import { recycleDuplicates, scanDuplicates } from '../engine/duplicates';
+import { resolveConflictKeep } from '../engine/conflicts';
 import { sha1OfFile } from '../fs/files';
 import type { ProgressHandler, SyncProgressEvent } from '../engine/progress';
 import { logger } from '../logger';
@@ -1006,6 +1007,56 @@ app.post('/api/pairs/:id/duplicates/recycle', requireAuth, async (req, res) => {
     try {
         const recycled = await recycleDuplicates(db, pair.id, pair.localDir, relPaths);
         res.json({ ok: true, recycled });
+    } catch (err) {
+        res.status(400).json({ error: (err as Error).message });
+    } finally {
+        db.close();
+    }
+});
+
+app.get('/api/pairs/:id/conflicts', requireAuth, (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    const db = new SyncDB(syncDbPath());
+    try {
+        const conflicts = db.listConflicts(pair.id).filter((c) => {
+            if (existsSync(path.join(pair.localDir, c.conflictPath))) return true;
+            db.removeConflict(pair.id, c.conflictPath); // stale copy gone — drop the record
+            return false;
+        });
+        res.json({ conflicts });
+    } finally {
+        db.close();
+    }
+});
+
+app.post('/api/pairs/:id/conflicts/resolve', requireAuth, async (req, res) => {
+    const pair = getPairOrNull(req.params.id as string);
+    if (!pair) {
+        res.status(404).json({ error: 'Pair not found' });
+        return;
+    }
+    const { conflictPath, keep } = (req.body ?? {}) as { conflictPath?: string; keep?: string };
+    if (typeof conflictPath !== 'string' || (keep !== 'local' && keep !== 'drive')) {
+        res.status(400).json({ error: 'conflictPath (string) and keep ("local" | "drive") are required' });
+        return;
+    }
+    if (syncing) {
+        res.status(409).json({ error: 'A sync is in progress — wait for it to finish' });
+        return;
+    }
+    const db = new SyncDB(syncDbPath());
+    try {
+        const conflict = db.getConflict(pair.id, conflictPath);
+        if (!conflict) {
+            res.status(404).json({ error: 'Conflict not found' });
+            return;
+        }
+        await resolveConflictKeep(db, authService.getSession().sdk, pair.id, pair.localDir, conflict, keep);
+        res.json({ ok: true });
     } catch (err) {
         res.status(400).json({ error: (err as Error).message });
     } finally {

@@ -25,6 +25,22 @@ export interface DuplicateGroup {
     files: DuplicateFile[];
 }
 
+/** A pending sync conflict: the local version (at relPath) vs the preserved
+ *  Drive version (at conflictPath, a `.conflict-<ts>` copy). */
+export interface ConflictRecord {
+    pairId: string;
+    relPath: string;
+    conflictPath: string;
+    driveUid: string | null;
+    localSha1: string | null;
+    localSize: number | null;
+    localMtime: number | null;
+    conflictSha1: string | null;
+    conflictSize: number | null;
+    conflictMtime: number | null;
+    createdAt: number;
+}
+
 export interface Pair {
     id: string;
     localDir: string;
@@ -96,6 +112,36 @@ function toPair(row: PairRow): Pair {
     };
 }
 
+interface ConflictRow {
+    pair_id: string;
+    rel_path: string;
+    conflict_path: string;
+    drive_uid: string | null;
+    local_sha1: string | null;
+    local_size: number | null;
+    local_mtime: number | null;
+    conflict_sha1: string | null;
+    conflict_size: number | null;
+    conflict_mtime: number | null;
+    created_at: number;
+}
+
+function toConflict(row: ConflictRow): ConflictRecord {
+    return {
+        pairId: row.pair_id,
+        relPath: row.rel_path,
+        conflictPath: row.conflict_path,
+        driveUid: row.drive_uid,
+        localSha1: row.local_sha1,
+        localSize: row.local_size,
+        localMtime: row.local_mtime,
+        conflictSha1: row.conflict_sha1,
+        conflictSize: row.conflict_size,
+        conflictMtime: row.conflict_mtime,
+        createdAt: row.created_at,
+    };
+}
+
 /**
  * Sync state store for the bidirectional engine. Unlike the M3 backup DB, this
  * tracks BOTH sides of a folder pair (drive fingerprint + local fingerprint) so
@@ -138,6 +184,20 @@ export class SyncDB {
                 pair_id TEXT NOT NULL,
                 rel_path TEXT NOT NULL,
                 PRIMARY KEY (pair_id, rel_path)
+            );
+            CREATE TABLE IF NOT EXISTS conflicts (
+                pair_id TEXT NOT NULL,
+                rel_path TEXT NOT NULL,
+                conflict_path TEXT NOT NULL,
+                drive_uid TEXT,
+                local_sha1 TEXT,
+                local_size INTEGER,
+                local_mtime INTEGER,
+                conflict_sha1 TEXT,
+                conflict_size INTEGER,
+                conflict_mtime INTEGER,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (pair_id, conflict_path)
             );
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
@@ -212,6 +272,7 @@ export class SyncDB {
     removePair(id: string): void {
         this.db.prepare('DELETE FROM nodes WHERE pair_id = ?').run(id);
         this.db.prepare('DELETE FROM dupe_ignored WHERE pair_id = ?').run(id);
+        this.db.prepare('DELETE FROM conflicts WHERE pair_id = ?').run(id);
         this.db.prepare('DELETE FROM pairs WHERE id = ?').run(id);
     }
 
@@ -358,6 +419,40 @@ export class SyncDB {
 
     setSetting(key: string, value: string): void {
         this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+    }
+
+    /** Pending conflicts for a pair, oldest first. */
+    listConflicts(pairId: string): ConflictRecord[] {
+        const rows = this.db.prepare('SELECT * FROM conflicts WHERE pair_id = ? ORDER BY created_at').all(pairId) as unknown as ConflictRow[];
+        return rows.map(toConflict);
+    }
+
+    upsertConflict(c: ConflictRecord): void {
+        this.db
+            .prepare(
+                `INSERT INTO conflicts (pair_id, rel_path, conflict_path, drive_uid, local_sha1, local_size, local_mtime, conflict_sha1, conflict_size, conflict_mtime, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(pair_id, conflict_path) DO UPDATE SET
+                    rel_path = excluded.rel_path,
+                    drive_uid = excluded.drive_uid,
+                    local_sha1 = excluded.local_sha1,
+                    local_size = excluded.local_size,
+                    local_mtime = excluded.local_mtime,
+                    conflict_sha1 = excluded.conflict_sha1,
+                    conflict_size = excluded.conflict_size,
+                    conflict_mtime = excluded.conflict_mtime,
+                    created_at = excluded.created_at`,
+            )
+            .run(c.pairId, c.relPath, c.conflictPath, c.driveUid, c.localSha1, c.localSize, c.localMtime, c.conflictSha1, c.conflictSize, c.conflictMtime, c.createdAt);
+    }
+
+    getConflict(pairId: string, conflictPath: string): ConflictRecord | undefined {
+        const row = this.db.prepare('SELECT * FROM conflicts WHERE pair_id = ? AND conflict_path = ?').get(pairId, conflictPath) as unknown as ConflictRow | undefined;
+        return row ? toConflict(row) : undefined;
+    }
+
+    removeConflict(pairId: string, conflictPath: string): void {
+        this.db.prepare('DELETE FROM conflicts WHERE pair_id = ? AND conflict_path = ?').run(pairId, conflictPath);
     }
 
     close(): void {

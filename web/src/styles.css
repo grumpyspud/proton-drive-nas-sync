@@ -1625,6 +1625,74 @@ select.select:focus {
     color: var(--ink-400);
 }
 
+/* ---------- Conflicts panel ---------- */
+.btn-conflicts {
+    color: #e0883a;
+    border-color: #e0883a;
+}
+.btn-conflicts:hover:not(:disabled) {
+    background: rgba(224, 136, 58, 0.16);
+    color: #e0883a;
+}
+.conflict-body {
+    overflow-y: auto;
+    max-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.conflict-group {
+    border: 1px solid var(--border);
+    border-left: 3px solid #e0883a;
+    border-radius: var(--radius-sm);
+    padding: 12px;
+}
+.conflict-path {
+    font-size: 13px;
+    font-weight: 700;
+    word-break: break-all;
+    margin-bottom: 8px;
+}
+.conflict-versions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.conflict-version {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+.conflict-version input {
+    width: auto;
+}
+.conflict-vlabel {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-600);
+    white-space: nowrap;
+}
+.conflict-vmeta {
+    font-size: 12px;
+    color: var(--ink-400);
+    flex: 1;
+    min-width: 0;
+}
+.conflict-vhash {
+    font-size: 11px;
+    color: var(--ink-400);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.conflict-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
+
 /* ---------- Error log ---------- */
 .errorlog-toolbar {
     display: flex;

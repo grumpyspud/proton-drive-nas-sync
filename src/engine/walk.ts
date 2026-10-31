@@ -34,6 +34,14 @@ export function driveFingerprint(node: NodeEntity): string {
     return `${sha1}|${size}|${mtime}`;
 }
 
+/** Best-effort modification time (ms) of a Drive file node, or null if unknown. */
+export function driveMtime(node: NodeEntity | undefined): number | null {
+    if (!node) return null;
+    const t = node.activeRevision?.claimedModificationTime ?? node.modificationTime;
+    const ms = t?.getTime?.();
+    return typeof ms === 'number' ? ms : null;
+}
+
 /** Best-effort byte size of a Drive file node (claimed size), or 0 if unknown. */
 export function driveSize(node: NodeEntity | undefined): number {
     if (!node) return 0;
@@ -48,6 +56,9 @@ export interface WalkLocalOptions {
     excludePrefix?: string;
     /** Invoked for each leftover `*.pdn-part` file (already excluded from results). */
     onPartial?: (relPath: string, absPath: string) => void | Promise<void>;
+    /** Invoked for each `.conflict-*` copy (excluded from results, but reported so
+     *  the engine can record it for manual conflict review). */
+    onConflict?: (relPath: string, absPath: string, size: number, mtimeMs: number) => void | Promise<void>;
     /** Throttled live counter while the tree is being scanned (for progress UIs). */
     onProgress?: (stats: WalkProgress) => void;
 }
@@ -76,7 +87,7 @@ function throttledProgress(onProgress: ((stats: WalkProgress) => void) | undefin
  * reserved namespace, e.g. `.pdn-trash`) are skipped. Symlinks are skipped.
  */
 export async function walkLocalTree(root: string, options: WalkLocalOptions = {}): Promise<LocalEntry[]> {
-    const { excludePrefix = '.pdn-', onPartial, onProgress } = options;
+    const { excludePrefix = '.pdn-', onPartial, onConflict, onProgress } = options;
     const entries: LocalEntry[] = [];
     let files = 0;
     let folders = 0;
@@ -99,8 +110,13 @@ export async function walkLocalTree(root: string, options: WalkLocalOptions = {}
                     continue;
                 }
                 // Resolved-conflict copies (`<name>.conflict-<ts>`) are preserved
-                // Drive versions left for manual review — never re-synced.
-                if (d.name.includes('.conflict-')) continue;
+                // Drive versions left for manual review — never re-synced, but
+                // reported so the engine can record them for the Conflicts panel.
+                if (/\.conflict-\d+$/.test(d.name)) {
+                    const st = await stat(abs);
+                    await onConflict?.(relPath, abs, st.size, st.mtimeMs);
+                    continue;
+                }
                 const st = await stat(abs);
                 files++;
                 entries.push({ relPath, absPath: abs, kind: 'file', size: st.size, mtimeMs: st.mtimeMs });

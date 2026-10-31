@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listPairs, listTrash, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
+import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getConflicts, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listPairs, listTrash, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
 import type { DeletionHold, ErrorLogStatus, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
@@ -7,6 +7,7 @@ import { LogsModal } from './LogsModal';
 import { ErrorLogModal } from './ErrorLogModal';
 import { BackupModal } from './BackupModal';
 import { DuplicatesModal } from './DuplicatesModal';
+import { ConflictsModal } from './ConflictsModal';
 import { CreatePairModal } from './CreatePairModal';
 import { ActivityLogModal } from './ActivityLogModal';
 import { SignOutModal } from './SignOutModal';
@@ -42,6 +43,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [deletionHold, setDeletionHold] = useState<DeletionHold | null>(null);
     const [showBackup, setShowBackup] = useState(false);
     const [dedupePair, setDedupePair] = useState<Pair | null>(null);
+    const [conflictsPair, setConflictsPair] = useState<Pair | null>(null);
+    const [conflictCounts, setConflictCounts] = useState<Record<string, number>>({});
     const [hashingPair, setHashingPair] = useState<{ pairId: string; done: number; total: number } | null>(null);
     const hashingRef = useRef(false);
     const pendingDedupePair = useRef<Pair | null>(null);
@@ -75,6 +78,25 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
             hashingRef.current = false;
             setHashingPair(null);
             setError((err as Error).message);
+        }
+    }, []);
+
+    const loadConflicts = useCallback(async () => {
+        try {
+            const { pairs } = await listPairs();
+            const counts: Record<string, number> = {};
+            await Promise.all(
+                pairs.map(async (p) => {
+                    try {
+                        counts[p.id] = (await getConflicts(p.id)).conflicts.length;
+                    } catch {
+                        counts[p.id] = 0;
+                    }
+                }),
+            );
+            setConflictCounts(counts);
+        } catch {
+            // non-fatal — conflict counts are best-effort
         }
     }, []);
 
@@ -134,7 +156,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         void loadLocalStorage();
         void loadSyncStatus();
         void loadSettings();
-    }, [reload, loadStorage, loadLocalStorage, loadSyncStatus, loadSettings]);
+        void loadConflicts();
+    }, [reload, loadStorage, loadLocalStorage, loadSyncStatus, loadSettings, loadConflicts]);
 
     useEffect(() => {
         const es = new EventSource('/api/events');
@@ -236,6 +259,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     void loadStorage();
                     void loadLocalStorage();
                     void loadErrorStatus();
+                    void loadConflicts();
                     break;
                 case 'sync-error':
                     setSyncing(false);
@@ -586,6 +610,11 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                                     Dedupe Scan
                                                 </button>
                                             )}
+                                            {(conflictCounts[p.id] ?? 0) > 0 && (
+                                                <button className="btn btn-ghost btn-sm btn-conflicts" onClick={() => setConflictsPair(p)}>
+                                                    Conflicts ({conflictCounts[p.id]})
+                                                </button>
+                                            )}
                                         </div>
                                     </li>
                                 );
@@ -604,6 +633,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
             {showErrorLog && <ErrorLogModal onClose={() => { setShowErrorLog(false); void loadErrorStatus(); }} />}
             {showCreatePair && <CreatePairModal volumes={localVolumes} onCreated={reload} onClose={() => setShowCreatePair(false)} />}
             {dedupePair && <DuplicatesModal pair={dedupePair} onClose={() => setDedupePair(null)} />}
+            {conflictsPair && <ConflictsModal pair={conflictsPair} onClose={() => setConflictsPair(null)} onChanged={() => void loadConflicts()} />}
             {showBackup && <BackupModal onClose={() => setShowBackup(false)} />}
             {showSignOut && <SignOutModal pairCount={pairs.length} onClose={() => setShowSignOut(false)} onSignedOut={onLogout} />}
         </div>

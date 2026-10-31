@@ -1,4 +1,4 @@
-import type { DirListing, DuplicateGroup, ErrorLogEntry, ErrorLogStatus, IgnoredGroup, LocalVolume, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
+import type { Conflict, DirListing, DuplicateGroup, ErrorLogEntry, ErrorLogStatus, IgnoredGroup, LocalVolume, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
 
 function getDeviceId(): string {
     try {
@@ -239,6 +239,14 @@ export function resetIgnored(id: string): Promise<{ ok: boolean; unignored: numb
 
 export function recycleDuplicates(id: string, relPaths: string[]): Promise<{ ok: boolean; recycled: number }> {
     return request(`/api/pairs/${encodeURIComponent(id)}/duplicates/recycle`, { method: 'POST', body: JSON.stringify({ relPaths }) });
+}
+
+export function getConflicts(id: string): Promise<{ conflicts: Conflict[] }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/conflicts`);
+}
+
+export function resolveConflict(id: string, conflictPath: string, keep: 'local' | 'drive'): Promise<{ ok: boolean }> {
+    return request(`/api/pairs/${encodeURIComponent(id)}/conflicts/resolve`, { method: 'POST', body: JSON.stringify({ conflictPath, keep }) });
 }
 
 export interface ClientFingerprint {
