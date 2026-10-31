@@ -155,6 +155,12 @@ export class SyncDB {
     constructor(filePath: string) {
         mkdirSync(path.dirname(filePath), { recursive: true });
         this.db = new DatabaseSync(filePath);
+        // WAL + NORMAL synchronous cut per-write latency (no fsync-on-every-commit
+        // like the default rollback journal). A power failure can lose the last few
+        // committed rows but never corrupt the DB, and the sync is idempotent (a
+        // rescan re-detects any diff).
+        this.db.exec('PRAGMA journal_mode = WAL');
+        this.db.exec('PRAGMA synchronous = NORMAL');
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS pairs (
                 id TEXT PRIMARY KEY,

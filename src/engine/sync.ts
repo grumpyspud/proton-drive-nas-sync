@@ -317,7 +317,14 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     for (const e of drive) if (e.kind === 'folder') folderRelPaths.add(e.relPath);
     for (const n of stored) if (n.kind === 'folder') folderRelPaths.add(n.relPath);
 
-    const sortedFolders = [...folderRelPaths].sort((a, b) => a.split('/').length - b.split('/').length);
+    // Precompute each path's depth once, then sort by it: the old comparator
+    // re-ran `split('/')` on every comparison (O(N log N) allocations), which on
+    // a big tree blocks the event loop for a long stretch before the folder
+    // loop's yields kick in.
+    const sortedFolders = [...folderRelPaths]
+        .map((p) => ({ p, depth: p.split('/').length }))
+        .sort((a, b) => a.depth - b.depth)
+        .map((x) => x.p);
     let folderI = 0;
     for (const relPath of sortedFolders) {
         checkAbort();
@@ -606,6 +613,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         const queue = [...fileRelPaths];
         let abortError: Error | null = null;
         const workers = Array.from({ length: Math.min(transferConcurrency, queue.length) }, async () => {
+            let workerI = 0;
             while (true) {
                 if (abortError || shouldAbort?.()) {
                     abortError ??= new SyncAbortedError();
@@ -622,6 +630,12 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                     }
                     throw err;
                 }
+                // Unchanged files reconcile fully synchronously (DB write + log, no
+                // real await), so `await reconcileFile()` only hops a microtask and
+                // the workers would otherwise drain the whole queue in one unbroken
+                // run, starving /api/health. Yield a real macrotask every N files so
+                // the healthcheck (and other I/O) stays responsive.
+                if (++workerI % 50 === 0) await new Promise<void>((r) => setImmediate(r));
             }
         });
         await Promise.all(workers);
