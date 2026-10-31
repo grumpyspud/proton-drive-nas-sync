@@ -150,8 +150,6 @@ UI's "Backup" is an encrypted config backup, not a file backup).
 
 ## License
 
-This project is **MIT**, but it depends on `@protontech/crypto` (Proton's
-OpenPGP fork + SRP primitives), which is **GPL-3.0**. The Drive SDK itself
-(`@protontech/drive-sdk`) is MIT. Bundling the GPL dependency means the
-distributed image carries GPL obligations — flag this before any public
-redistribution.
+This project is **GPL-3.0**. It links `@protontech/crypto` (Proton's OpenPGP
+fork + SRP primitives), which is GPL-3.0, so the distributed work is GPL-3.0.
+The Drive SDK itself (`@protontech/drive-sdk`) is MIT.

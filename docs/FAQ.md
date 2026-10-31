@@ -230,6 +230,18 @@ Be aware of these before relying on it:
 
 ---
 
+## What license is it?
+
+**GPL-3.0.** The app links `@protontech/crypto` (Proton's OpenPGP + SRP engine),
+which is GPL-3.0, so the distributed work is GPL-3.0. The Drive SDK
+(`@protontech/drive-sdk`) itself is MIT.
+
+GPL-3.0 does not restrict private use — running your own instance is unaffected.
+It applies when you *distribute* the code or a built image, in which case you
+must do so under GPL-3.0 and make the source available.
+
+---
+
 ## Other common questions
 
 ### Does it delete anything permanently?

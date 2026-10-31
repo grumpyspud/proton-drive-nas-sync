@@ -103,4 +103,7 @@ A standalone copy of this notice is available at [DISCLAIMER.md](DISCLAIMER.md).
 
 ## License
 
-[MIT](LICENSE), matching the upstream SDK.
+[GPL-3.0](LICENSE). The project is GPL-3.0 because it links
+[`@protontech/crypto`](https://github.com/protonmail/WebPackages) (Proton's
+OpenPGP + SRP engine), which is GPL-3.0. The official Drive SDK
+(`@protontech/drive-sdk`) remains MIT.
