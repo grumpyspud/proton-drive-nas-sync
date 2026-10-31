@@ -11,7 +11,7 @@ web/node_modules
 dist
 build
 
-# Local state / secrets — never bake into the image
+# Local state / secrets: never bake into the image
 config
 data
 *.db

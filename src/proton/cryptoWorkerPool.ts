@@ -102,7 +102,7 @@ export function createNodeWorkerPool(createWorker: () => Endpoint): WorkerPoolIn
             }
         },
         encryptMessage: async (opts) =>
-            // @ts-expect-error — Remote<Api> marks the overloaded method non-callable
+            // @ts-expect-error: Remote<Api> marks the overloaded method non-callable
             (await getWorker()).encryptMessage(opts).catch(errorReporter),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         encryptMessageStream: async (opts: any) => (await getWorker()).encryptMessageStream(opts).catch(errorReporter),
@@ -110,9 +110,9 @@ export function createNodeWorkerPool(createWorker: () => Endpoint): WorkerPoolIn
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         decryptMessageStream: async (opts: any) => (await getWorker()).decryptMessageStream(opts).catch(errorReporter),
         signMessage: async (opts) =>
-            // @ts-expect-error — Remote<Api> marks the overloaded method non-callable
+            // @ts-expect-error: Remote<Api> marks the overloaded method non-callable
             (await getWorker()).signMessage(opts).catch(errorReporter),
-        // @ts-expect-error — Remote<Api> marks the overloaded method non-callable
+        // @ts-expect-error: Remote<Api> marks the overloaded method non-callable
         verifyMessage: async (opts) => (await getWorker()).verifyMessage(opts),
         verifyCleartextMessage: async (opts) => (await getWorker()).verifyCleartextMessage(opts).catch(errorReporter),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

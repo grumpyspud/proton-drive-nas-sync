@@ -310,7 +310,7 @@ export class SyncDB {
     }
 
     /** Files that have been pulled from Drive but never hashed locally
-     *  (local_sha1 IS NULL) — the set a backfill pass must hash so the
+     *  (local_sha1 IS NULL): the set a backfill pass must hash so the
      *  dedupe scan can see them. */
     listNodesWithNullSha1(pairId: string): SyncNode[] {
         const rows = this.db.prepare(`SELECT * FROM nodes WHERE pair_id = ? AND kind = 'file' AND local_sha1 IS NULL ORDER BY rel_path`).all(pairId) as unknown as NodeRow[];

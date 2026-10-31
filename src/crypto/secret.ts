@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
 /**
  * AES-256-GCM authenticated encryption for small secret blobs (the persisted
- * session). Uses Node's built-in crypto — this protects OUR session, not
+ * session). Uses Node's built-in crypto: this protects OUR session, not
  * Proton's file encryption (which the SDK handles separately).
  *
  * Payload format: `v1:<iv b64>:<tag b64>:<ciphertext b64>`.

@@ -10,13 +10,13 @@ interface Props {
 }
 
 function shortHash(h: string | null): string {
-    return h ? `${h.slice(0, 10)}…` : '—';
+    return h ? `${h.slice(0, 10)}…` : '~';
 }
 
 /**
  * Pending-conflict resolver for a single pair. Each conflict shows the two
  * versions (local + the preserved Drive copy) with size/date/hash; pick which
- * to keep and hit "Keep selected". One conflict at a time — resolution recycles
+ * to keep and hit "Keep selected". One conflict at a time: resolution recycles
  * the loser to .pdn-trash and, for "keep local", re-uploads to Drive.
  */
 export function ConflictsModal({ pair, onClose, onChanged }: Props) {
@@ -66,7 +66,7 @@ export function ConflictsModal({ pair, onClose, onChanged }: Props) {
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-head">
-                    <h2>Conflicts — {pair.driveFolderName || 'My Files (root)'}</h2>
+                    <h2>Conflicts: {pair.driveFolderName || 'My Files (root)'}</h2>
                     <div className="dupe-tools">
                         <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
                             ✕
@@ -75,7 +75,7 @@ export function ConflictsModal({ pair, onClose, onChanged }: Props) {
                 </div>
 
                 <p className="dupe-hint">
-                    A file exists in both places with different contents. Choose which version to keep — the other is
+                    A file exists in both places with different contents. Choose which version to keep: the other is
                     recycled to .pdn-trash.
                 </p>
 
@@ -154,9 +154,9 @@ function VersionRow({
             <input type="radio" name={name} value={value} checked={checked} onChange={onSelect} />
             <span className="conflict-vlabel">{label}</span>
             <span className="conflict-vmeta">
-                {size != null ? formatBytes(size) : '—'}
+                {size != null ? formatBytes(size) : '~'}
                 {' · '}
-                {mtimeMs != null ? formatDate(mtimeMs) : '—'}
+                {mtimeMs != null ? formatDate(mtimeMs) : '~'}
             </span>
             <span className="conflict-vhash" title={sha1 ?? undefined}>
                 SHA-1 {shortHash(sha1)}

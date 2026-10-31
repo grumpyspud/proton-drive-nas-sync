@@ -1,5 +1,5 @@
 /**
- * Crypto worker entry — runs the `@protontech/crypto` `Api` endpoint inside a
+ * Crypto worker entry: runs the `@protontech/crypto` `Api` endpoint inside a
  * `node:worker_threads` Worker, exposed to the main thread via comlink.
  *
  * Mirrors the package's own browser `worker.ts`, but binds comlink to the node

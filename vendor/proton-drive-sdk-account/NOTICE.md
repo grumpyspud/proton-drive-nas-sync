@@ -9,14 +9,14 @@ the official Proton Drive SDK repository:
 Copyright (c) 2026 Proton AG. Licensed under the MIT License.
 
 It is vendored (not installed from npm) because the module is marked
-`"private": true` and is still incubating — Proton does not publish it to the
+`"private": true` and is still incubating: Proton does not publish it to the
 npm registry yet. The module implements the SRP login, session management, and
 account/address API access that `@protontech/drive-sdk` requires but does not
 itself provide.
 
 The code is reproduced **verbatim** (no edits). The extensions this project
-needs on top of it — TOTP two-factor authentication and two-password-mode
-support — live in `src/auth/login.ts` and are deliberately kept out of this
+needs on top of it: TOTP two-factor authentication and two-password-mode
+support: live in `src/auth/login.ts` and are deliberately kept out of this
 directory, so it can be cleanly re-vendored when upstream updates.
 
 To re-vendor: copy `incubating/account/js/src/*.ts` from the SDK repo into this

@@ -30,7 +30,7 @@ export interface BackupResult {
  *
  * Change detection: size + mtime fast-path; on any change, SHA-256 is compared
  * against the stored hash before uploading. `mirror` additionally trashes Drive
- * files that vanished locally — but only after the source-availability gate and
+ * files that vanished locally: but only after the source-availability gate and
  * the deletion-rate tripwire both pass.
  */
 export async function backup(options: BackupOptions): Promise<BackupResult> {
@@ -81,7 +81,7 @@ export async function backup(options: BackupOptions): Promise<BackupResult> {
 
         const hash = await sha256OfFile(file.absPath);
         if (existing && db && db.sha256 === hash) {
-            // Content unchanged (metadata-only change) — refresh the record, no upload.
+            // Content unchanged (metadata-only change): refresh the record, no upload.
             stateDb.upsert({ relPath: file.relPath, kind: 'file', driveUid: existing.uid, sha256: hash, size: file.size, mtimeMs: file.mtimeMs });
             result.skipped++;
             continue;

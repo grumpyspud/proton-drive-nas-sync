@@ -1,10 +1,10 @@
 /** Container network transfer-rate sampler. Reads cumulative RX+TX byte counts
  *  from `/proc/net/dev` (Linux) and turns them into a bytes/sec rate over a
  *  sliding window. This now drives the "Overall sync" speed readout: the old
- *  per-tick estimate spiked to "—" or "1.0 GB/s" because the SDK's progress
+ *  per-tick estimate spiked to "~" or "1.0 GB/s" because the SDK's progress
  *  callbacks fire in bursts, whereas the NIC counters are a stable ground truth.
  *
- *  It is not exact — it includes ALL container traffic (the web UI / SSE chatter,
+ *  It is not exact: it includes ALL container traffic (the web UI / SSE chatter,
  *  health checks, etc.). That is a few KB/s against the MB/s–GB/s of a real
  *  transfer, so it is treated as noise. */
 

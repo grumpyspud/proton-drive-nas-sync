@@ -21,7 +21,7 @@ export const SYNC_FREQUENCIES: FrequencyOption[] = [
  *  not in the preset list (e.g. legacy values). */
 export function frequencyLabel(seconds: number): string {
     const match = SYNC_FREQUENCIES.find((f) => f.value === seconds);
-    return match ? match.label : seconds > 0 ? `every ${Math.round(seconds / 60)} min` : '—';
+    return match ? match.label : seconds > 0 ? `every ${Math.round(seconds / 60)} min` : '~';
 }
 
 /** Effective auto-sync interval for a pair, accounting for the legacy

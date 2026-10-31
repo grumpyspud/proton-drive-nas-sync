@@ -206,7 +206,7 @@ export async function beginLogin(
 /**
  * Phase 2 of login: submit 2FA (if enabled and not yet done) then derive the
  * user key password (mailbox password in two-password mode). Resumes from the
- * pending state — /auth is never re-issued.
+ * pending state: /auth is never re-issued.
  */
 export async function completeLogin(
     session: LoginSession,

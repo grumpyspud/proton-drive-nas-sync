@@ -3,7 +3,7 @@
 This guide covers building and running the Docker image, with notes for NAS
 deployments (bind mounts, persistent volumes, and security).
 
-> **⚠️ Third-party application — not affiliated with, endorsed by, or supported
+> **⚠️ Third-party application: not affiliated with, endorsed by, or supported
 > by Proton AG.**
 
 ## What the container needs
@@ -43,7 +43,7 @@ docker compose up -d
 
 Then open `https://<host>:8787`, log in with your Proton credentials (2FA and a
 second-tier mailbox password are supported), and create a folder pair. (The UI
-serves HTTPS by default — see [HTTPS](#https).)
+serves HTTPS by default: see [HTTPS](#https).)
 
 ### Example compose override for a NAS
 
@@ -72,16 +72,16 @@ services:
   survive reboots and image rebuilds.
 - Bind each NAS folder you want to sync under `/data/<name>`. In the web UI, set
   the pair's **local folder** to that absolute path (e.g. `/data/photos`).
-- Only folders on a mounted volume can be paired — a path inside the container
+- Only folders on a mounted volume can be paired: a path inside the container
   itself is rejected, so a sync can't write to the container's own storage.
 
 ## 3. First run
 
 1. Open the UI and sign in with your Proton account.
-2. **Create Sync Pair** (top bar) — pick the local folder (absolute path under
+2. **Create Sync Pair** (top bar): pick the local folder (absolute path under
    `/data`) and a Proton Drive folder, then choose **Manual** or an **Auto-sync**
    schedule.
-3. **Sync** — watch progress (files processed, bytes, network rate) in real time.
+3. **Sync**: watch progress (files processed, bytes, network rate) in real time.
 
 For a full walkthrough with screenshots see [SETUP.md](SETUP.md); for a reference
 of every feature and option see [USER_GUIDE.md](USER_GUIDE.md).
@@ -110,7 +110,7 @@ first boot and cached in `/config` (`selfsigned.crt` + `selfsigned.key`). This
 encrypts the browser ↔ app link (including the Proton login) out of the box.
 
 A self-signed certificate makes your browser show a "not secure" warning the first
-time you connect — accept it to proceed. To serve HTTPS without the warning,
+time you connect: accept it to proceed. To serve HTTPS without the warning,
 provide your own certificate:
 
 ```yaml

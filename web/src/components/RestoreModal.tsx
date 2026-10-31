@@ -44,7 +44,7 @@ export function RestoreModal({ onClose, onRestored }: Props) {
             const r = await restoreBackup(appPassword, passphrase, backupB64 ?? undefined);
             setResult(
                 r.resumed
-                    ? 'Restore complete — your Proton session was resumed.'
+                    ? 'Restore complete: your Proton session was resumed.'
                     : 'Restore complete, but the Proton session could not be resumed (the refresh token may have expired). Sign in again to reconnect.',
             );
         } catch (err) {
@@ -84,14 +84,14 @@ export function RestoreModal({ onClose, onRestored }: Props) {
                         </label>
                         <label className="field">
                             <span>
-                                Backup file <em>(optional — uses the on-server copy if empty)</em>
+                                Backup file <em>(optional: uses the on-server copy if empty)</em>
                             </span>
                             <input type="file" onChange={(e) => void onFile(e.target.files?.[0])} />
                         </label>
                         {fileName && <p className="modal-hint">Selected: {fileName}</p>}
                         <p className="modal-hint">
                             This replaces the current pairs, session, and encryption key. It needs the app password <em>and</em>{' '}
-                            passphrase that created the backup — if the app password has changed since, set it back to its
+                            passphrase that created the backup: if the app password has changed since, set it back to its
                             backup-time value first.
                         </p>
                         {error && <div className="alert">{error}</div>}

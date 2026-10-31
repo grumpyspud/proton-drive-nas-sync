@@ -4,7 +4,7 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:
  * Encrypted backup container for the full app state (pair DB + session blob +
  * master key). The key is derived from BOTH the app password and a user-chosen
  * passphrase (scrypt over `<appPassword>\0<passphrase>`), so an attacker needs
- * both secrets — and neither is stored in the file itself.
+ * both secrets: and neither is stored in the file itself.
  *
  * Wire format (binary):
  *   magic  "PDNBAK1"                       (7 bytes)

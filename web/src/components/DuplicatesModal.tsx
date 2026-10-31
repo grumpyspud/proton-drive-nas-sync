@@ -21,7 +21,7 @@ interface Props {
 
 /**
  * Duplicate-file scan for a single pair, shown as a pop-up overlay. Does NOT scan
- * on open — the user picks a minimum file size and clicks Scan. Reuses the per-file
+ * on open: the user picks a minimum file size and clicks Scan. Reuses the per-file
  * SHA-1 the sync engine already stores. "Keep" is the checked state; if nothing is
  * checked, everything is kept (no way to remove all).
  */
@@ -41,7 +41,7 @@ export function DuplicatesModal({ pair, onClose }: Props) {
         try {
             setIgnored((await listIgnored(pair.id)).groups);
         } catch {
-            // non-fatal — the ignore list is best-effort
+            // non-fatal: the ignore list is best-effort
         }
     }
 
@@ -114,7 +114,7 @@ export function DuplicatesModal({ pair, onClose }: Props) {
         setNotice(null);
         try {
             const res = await recycleDuplicates(pair.id, unselected);
-            setNotice(`Recycled ${res.recycled} file(s) locally — Drive copies will be trashed on the next sync.`);
+            setNotice(`Recycled ${res.recycled} file(s) locally: Drive copies will be trashed on the next sync.`);
             await scan();
         } catch (err) {
             setError((err as Error).message);
@@ -140,7 +140,7 @@ export function DuplicatesModal({ pair, onClose }: Props) {
         setNotice(null);
         try {
             const res = await recycleDuplicates(pair.id, batchRelPaths);
-            setNotice(`Recycled ${res.recycled} file(s) locally — Drive copies will be trashed on the next sync.`);
+            setNotice(`Recycled ${res.recycled} file(s) locally: Drive copies will be trashed on the next sync.`);
             await scan();
         } catch (err) {
             setError((err as Error).message);
@@ -153,7 +153,7 @@ export function DuplicatesModal({ pair, onClose }: Props) {
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-head">
-                    <h2>Duplicates — {pair.driveFolderName || 'My Files (root)'}</h2>
+                    <h2>Duplicates: {pair.driveFolderName || 'My Files (root)'}</h2>
                     <div className="dupe-tools">
                         <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
                             ✕
@@ -177,7 +177,7 @@ export function DuplicatesModal({ pair, onClose }: Props) {
                     </button>
                 </div>
 
-                <p className="dupe-hint">Check the copies you want to keep — unchecked copies are recycled. If none are checked, everything is kept.</p>
+                <p className="dupe-hint">Check the copies you want to keep: unchecked copies are recycled. If none are checked, everything is kept.</p>
 
                 {error && <div className="alert">{error}</div>}
                 {notice && <div className="alert alert-ok">{notice}</div>}

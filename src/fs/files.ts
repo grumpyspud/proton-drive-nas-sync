@@ -126,7 +126,7 @@ async function uploadTo(
 
 /**
  * Downloads a file to `localPath`, verifying integrity (signature + decryption).
- * Streams to a temp file then renames into place (atomic — no partial files on
+ * Streams to a temp file then renames into place (atomic: no partial files on
  * failure). Throws if signature verification flags an issue.
  */
 export async function downloadFile(

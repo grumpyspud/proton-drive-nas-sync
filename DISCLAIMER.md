@@ -5,7 +5,7 @@ implied.** By using it you accept full responsibility for your data and for the
 outcome of running it.
 
 The author is **not liable** for any loss, deletion, corruption, or unintended
-modification of files — whether on your NAS or in your Proton Drive account —
+modification of files: whether on your NAS or in your Proton Drive account ~
 arising from the use or misuse of this application. This includes, without
 limitation, software defects, misconfiguration, network or storage failures,
 interrupted operations, and sync conflicts.

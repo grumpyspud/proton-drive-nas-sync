@@ -39,7 +39,7 @@ export function App() {
                 setAuth({ authenticated: s.authenticated, uid: s.uid });
             })
             .catch((err) => {
-                // A network failure is not a logout — don't drop the user to the
+                // A network failure is not a logout: don't drop the user to the
                 // login screen just because the server was briefly unreachable.
                 if (err instanceof NetworkError) {
                     setConnectionError(true);

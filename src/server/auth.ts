@@ -99,7 +99,7 @@ class AuthService {
             }
             const message = (error as Error).message ?? String(error);
             logger.error('Login failed', error);
-            // Hard failure — drop any partial state so the next attempt starts fresh.
+            // Hard failure: drop any partial state so the next attempt starts fresh.
             this.pendingSession = null;
             this.pending = null;
             return { authenticated: false, error: message };

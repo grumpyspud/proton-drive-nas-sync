@@ -314,7 +314,7 @@ app.post('/api/restore', async (req, res) => {
     } else {
         const p = backupFilePath();
         if (!existsSync(p)) {
-            res.status(404).json({ error: 'No backup file on this server — upload one instead' });
+            res.status(404).json({ error: 'No backup file on this server: upload one instead' });
             return;
         }
         container = readFileSync(p);
@@ -327,12 +327,12 @@ app.post('/api/restore', async (req, res) => {
         return;
     }
     if (syncing) {
-        res.status(409).json({ error: 'A sync is in progress — retry shortly' });
+        res.status(409).json({ error: 'A sync is in progress: retry shortly' });
         return;
     }
     try {
         if (process.env.PDN_ENCRYPTION_KEY) {
-            logger.warn('Restore wrote the backed-up master key to the keyfile, but PDN_ENCRYPTION_KEY is also set and will take precedence — ensure it matches the backed-up key.');
+            logger.warn('Restore wrote the backed-up master key to the keyfile, but PDN_ENCRYPTION_KEY is also set and will take precedence: ensure it matches the backed-up key.');
         }
         writeFileAtomic(path.join(configDir(), 'encryption.key'), payload.masterKey);
         const blobPath = path.join(configDir(), 'session.blob');
@@ -403,7 +403,7 @@ function waitForSyncToStop(timeoutMs: number): Promise<boolean> {
  * drops all pair/account sync state (pairs + nodes + dupe_ignored), then signs
  * out of Proton (which deletes the session blob and releases the crypto keys).
  *
- * The user's actual synced files are deliberately NOT touched — only the app's
+ * The user's actual synced files are deliberately NOT touched: only the app's
  * own bookkeeping and its recycle bins. The `settings` table (a UI preference,
  * not account data) is preserved.
  */
@@ -413,10 +413,10 @@ async function signOutAndReset(): Promise<void> {
     stopRequested = true;
     const stopped = await waitForSyncToStop(30_000);
     if (!stopped) {
-        // Don't wipe state underneath a running sync — restore and let the caller retry.
+        // Don't wipe state underneath a running sync: restore and let the caller retry.
         paused = false;
         stopRequested = false;
-        throw new SyncBusyError('A sync is still finishing — stop it and try again.');
+        throw new SyncBusyError('A sync is still finishing: stop it and try again.');
     }
 
     // 2. Empty each pair's local trash, then drop its DB state.
@@ -445,11 +445,11 @@ async function signOutAndReset(): Promise<void> {
     paused = false;
     stopRequested = false;
     pendingDeletion = null;
-    logger.info('Signed out — cleared all folder pairs and local trash');
+    logger.info('Signed out: cleared all folder pairs and local trash');
 }
 
 // Sign out is destructive (it clears all pairs + trash), so require a live session
-// like every other mutating route — an unauthenticated client must not be able to
+// like every other mutating route: an unauthenticated client must not be able to
 // wipe sync state with a bare POST.
 app.post('/api/auth/logout', requireAuth, async (_req, res) => {
     try {
@@ -857,7 +857,7 @@ app.get('/api/pairs/:id/duplicates', requireAuth, (req, res) => {
 // starts a dedupe scan: the POST returns immediately and the job streams
 // `hash-progress`/`hash-complete`/`hash-cancelled` over SSE, so the button shows
 // progress without holding the request open. A sync starting for the same pair
-// cancels the job via the `syncingPairId` checks below — the sync re-hashes what it
+// cancels the job via the `syncingPairId` checks below: the sync re-hashes what it
 // needs, and a concurrent backfill could otherwise write a stale hash over a
 // freshly re-downloaded file.
 async function runHashBackfill(pairId: string, localDir: string): Promise<void> {
@@ -881,7 +881,7 @@ async function runHashBackfill(pairId: string, localDir: string): Promise<void> 
                 size = st.size;
                 mtimeMs = st.mtimeMs;
             } catch {
-                // missing or unreadable — leave its hash null; a later sync re-hashes it
+                // missing or unreadable: leave its hash null; a later sync re-hashes it
             }
             if (syncingPairId === pairId) {
                 broadcast({ type: 'hash-cancelled', pairId });
@@ -908,7 +908,7 @@ app.post('/api/pairs/:id/hash-missing', requireAuth, (req, res) => {
         return;
     }
     if (syncingPairId === pair.id) {
-        res.status(409).json({ error: 'A sync is in progress for this pair — retry after it finishes.' });
+        res.status(409).json({ error: 'A sync is in progress for this pair: retry after it finishes.' });
         return;
     }
     if (hashJobs.has(pair.id)) {
@@ -1000,7 +1000,7 @@ app.post('/api/pairs/:id/duplicates/recycle', requireAuth, async (req, res) => {
         return;
     }
     if (syncing) {
-        res.status(409).json({ error: 'A sync is in progress — wait for it to finish' });
+        res.status(409).json({ error: 'A sync is in progress: wait for it to finish' });
         return;
     }
     const db = new SyncDB(syncDbPath());
@@ -1024,7 +1024,7 @@ app.get('/api/pairs/:id/conflicts', requireAuth, (req, res) => {
     try {
         const conflicts = db.listConflicts(pair.id).filter((c) => {
             if (existsSync(path.join(pair.localDir, c.conflictPath))) return true;
-            db.removeConflict(pair.id, c.conflictPath); // stale copy gone — drop the record
+            db.removeConflict(pair.id, c.conflictPath); // stale copy gone: drop the record
             return false;
         });
         res.json({ conflicts });
@@ -1045,7 +1045,7 @@ app.post('/api/pairs/:id/conflicts/resolve', requireAuth, async (req, res) => {
         return;
     }
     if (syncing) {
-        res.status(409).json({ error: 'A sync is in progress — wait for it to finish' });
+        res.status(409).json({ error: 'A sync is in progress: wait for it to finish' });
         return;
     }
     const db = new SyncDB(syncDbPath());
@@ -1193,7 +1193,7 @@ app.post('/api/backup/create', requireAuth, (req, res) => {
         return;
     }
     if (syncing) {
-        res.status(409).json({ error: 'A sync is in progress — wait for it to finish' });
+        res.status(409).json({ error: 'A sync is in progress: wait for it to finish' });
         return;
     }
     const dbPath = syncDbPath();

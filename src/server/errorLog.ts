@@ -31,7 +31,7 @@ function resetPath(): string {
     return path.join(configDir(), 'errorlog.reset');
 }
 
-/** Timestamp of the last "Reset" — entries newer than this are considered unseen. */
+/** Timestamp of the last "Reset": entries newer than this are considered unseen. */
 export function lastResetAt(): number {
     try {
         const p = resetPath();

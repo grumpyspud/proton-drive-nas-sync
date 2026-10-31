@@ -7,7 +7,7 @@ import { logger } from '../logger';
 import { nodeEndpoint } from './comlinkNode';
 import { createNodeWorkerPool } from './cryptoWorkerPool';
 
-/** Upper bound on auto-detected workers — each worker loads the crypto package
+/** Upper bound on auto-detected workers: each worker loads the crypto package
  *  (~50–100 MB), so on a high-core NAS we cap rather than spawn a thread per core. */
 const MAX_AUTO_WORKERS = 8;
 
@@ -40,7 +40,7 @@ function cryptoWorkerCount(): number {
  * Mirrors the reference CLI's `initOpenPGPCryptoModule()`, except that when
  * `PDN_CRYPTO_WORKERS >= 2` the crypto endpoint is a pool of `worker_threads`
  * (each running `./cryptoWorker.ts`) instead of the inline single-threaded
- * `Api` — parallelising the CPU-bound decrypt/sign/verify work.
+ * `Api`: parallelising the CPU-bound decrypt/sign/verify work.
  *
  * The crypto package keeps its endpoint in module-level state, so the endpoint
  * is initialised once and the same `CryptoProxy` singleton is shared with the

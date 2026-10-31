@@ -4,7 +4,7 @@ import type { SessionCredentials, SessionInfo } from '../../vendor/proton-drive-
 /**
  * In-memory session store for the M0 spike.
  *
- * Security note: for M0 nothing is persisted to disk — raw passwords are never
+ * Security note: for M0 nothing is persisted to disk: raw passwords are never
  * written, and the derived user key password lives only in process memory.
  * Encrypted-at-rest persistence (AES-256-GCM, keyed by a Docker secret) is the
  * M2 deliverable and will replace this class's `load()`/`setSessionInfo()`.

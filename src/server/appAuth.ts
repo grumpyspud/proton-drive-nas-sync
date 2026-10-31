@@ -7,7 +7,7 @@ import { logger } from '../logger';
 /**
  * App-level password gate (a second layer on top of the Proton Drive login).
  *
- * The UI and every /api route — including the live SSE progress stream — are
+ * The UI and every /api route: including the live SSE progress stream: are
  * reachable by anyone who can hit the port (Tailscale peer, LAN host). This
  * module adds a single self-hosted password that, when set, gates all of that.
  *
@@ -122,7 +122,7 @@ function sign(tokenId: string): string {
     return createHmac('sha256', Buffer.from(current!.sessionKey, 'hex')).update(tokenId).digest('hex');
 }
 
-/** Returns `<tokenId>.<hmac>` — self-validating across restarts. */
+/** Returns `<tokenId>.<hmac>`: self-validating across restarts. */
 export function issueSessionToken(): string {
     const tokenId = randomBytes(16).toString('hex');
     return `${tokenId}.${sign(tokenId)}`;

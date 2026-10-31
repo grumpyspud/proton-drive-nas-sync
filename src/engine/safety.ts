@@ -32,7 +32,7 @@ export class DeletionTripwireError extends Error {
 /**
  * Source-availability gate: refuse to proceed if the local source folder is
  * missing or not a directory. This is the guard against a NAS volume that
- * unmounts or is otherwise unavailable — without it, the engine would mistake
+ * unmounts or is otherwise unavailable: without it, the engine would mistake
  * "source gone" for "everything deleted" and start mass-deleting from Drive.
  */
 export async function assertSourceAvailable(sourceDir: string): Promise<void> {

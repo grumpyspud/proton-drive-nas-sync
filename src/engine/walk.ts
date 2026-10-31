@@ -83,7 +83,7 @@ function throttledProgress(onProgress: ((stats: WalkProgress) => void) | undefin
 
 /**
  * Recursively walks a local directory tree (files + folders). Entries whose
- * name starts with `excludePrefix` (default `.pdn-` — the sync engine's
+ * name starts with `excludePrefix` (default `.pdn-`: the sync engine's
  * reserved namespace, e.g. `.pdn-trash`) are skipped. Symlinks are skipped.
  */
 export async function walkLocalTree(root: string, options: WalkLocalOptions = {}): Promise<LocalEntry[]> {
@@ -110,7 +110,7 @@ export async function walkLocalTree(root: string, options: WalkLocalOptions = {}
                     continue;
                 }
                 // Resolved-conflict copies (`<name>.conflict-<ts>`) are preserved
-                // Drive versions left for manual review — never re-synced, but
+                // Drive versions left for manual review: never re-synced, but
                 // reported so the engine can record them for the Conflicts panel.
                 if (/\.conflict-\d+$/.test(d.name)) {
                     const st = await stat(abs);

@@ -57,7 +57,7 @@ export async function recycleDuplicates(db: SyncDB, pairId: string, localDir: st
     for (const [sha1, list] of recycleBySha1) {
         const total = pathsBySha1.get(sha1)?.size ?? 0;
         if (total - list.length < 1) {
-            throw new Error('Refusing to remove every copy of a file — at least one duplicate must be kept.');
+            throw new Error('Refusing to remove every copy of a file: at least one duplicate must be kept.');
         }
     }
 

@@ -96,7 +96,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
             );
             setConflictCounts(counts);
         } catch {
-            // non-fatal — conflict counts are best-effort
+            // non-fatal: conflict counts are best-effort
         }
     }, []);
 
@@ -461,9 +461,9 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                     <div className="menu-field">
                                         <span className="menu-label">Max concurrent transfers</span>
                                         <select className="select" value={transferConcurrency} onChange={(e) => onTransferConcurrencyChange(Number(e.target.value))}>
-                                            <option value={1}>1 — sequential</option>
+                                            <option value={1}>1: sequential</option>
                                             <option value={2}>2</option>
-                                            <option value={3}>3 — default</option>
+                                            <option value={3}>3: default</option>
                                             <option value={4}>4</option>
                                         </select>
                                         <span className="menu-hint">Higher is faster for bulk syncs but uses more bandwidth.</span>
@@ -482,7 +482,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                 <div className="app-password-banner">
                     <span aria-hidden="true">🔓</span>
                     <span className="app-password-msg">
-                        No app password set — anyone who can reach this address can view this dashboard and watch live sync activity.{' '}
+                        No app password set: anyone who can reach this address can view this dashboard and watch live sync activity.{' '}
                         <span className="app-password-why" title="Your NAS is usually only reachable over Tailscale or your LAN, but an app password adds a second lock so that even someone on that network can't open the dashboard, see synced file names, or attempt a sign-in without it. The password is stored as a scrypt hash, never in plaintext.">
                             Why?
                         </span>
@@ -511,7 +511,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
 
                         {error && <div className="alert">{error}</div>}
 
-                        {reconnecting && <div className="alert">Connection lost — reconnecting…</div>}
+                        {reconnecting && <div className="alert">Connection lost: reconnecting…</div>}
 
                         {deletionHold && (
                             <DeletionHoldCard
@@ -529,7 +529,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                         {syncing && overall == null && active.size === 0 && (
                             scanState ? (
                                 <div className="muted">
-                                    Scanning {scanState.side === 'local' ? 'local folder' : 'Proton Drive'} —{' '}
+                                    Scanning {scanState.side === 'local' ? 'local folder' : 'Proton Drive'} ~{' '}
                                     {scanState.files.toLocaleString()} files · {scanState.folders.toLocaleString()} folders
                                 </div>
                             ) : (
@@ -625,7 +625,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                 </section>
             </main>
 
-            <footer className="footer">Third-party application — not affiliated with, endorsed by, or supported by Proton AG.</footer>
+            <footer className="footer">Third-party application: not affiliated with, endorsed by, or supported by Proton AG.</footer>
 
             {trashPair && <TrashModal pair={trashPair} onClose={() => setTrashPair(null)} />}
             {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
@@ -657,7 +657,7 @@ function DeletionHoldCard({ hold, onConfirm, onCancel }: { hold: DeletionHold; o
             </div>
             <p className="dh-desc">
                 This sync would delete <strong>{hold.deletions}</strong> of <strong>{hold.totalTracked}</strong> tracked files (
-                {pct}%), which exceeds the {hold.thresholdPct}% safety threshold. This usually means a source went offline — but if
+                {pct}%), which exceeds the {hold.thresholdPct}% safety threshold. This usually means a source went offline: but if
                 you intentionally deleted these, confirm to proceed.
             </p>
             <div className="dh-breakdown">
@@ -852,7 +852,7 @@ function TrashModal({ pair, onClose }: { pair: Pair; onClose: () => void }) {
         <div className="modal-overlay" onClick={onClose}>
             <div className="modal" onClick={(e) => e.stopPropagation()}>
                 <div className="modal-head">
-                    <h2>Trash — {pair.driveFolderName || 'My Files (root)'}</h2>
+                    <h2>Trash: {pair.driveFolderName || 'My Files (root)'}</h2>
                     <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
                         ✕
                     </button>

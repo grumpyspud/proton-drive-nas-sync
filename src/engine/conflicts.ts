@@ -33,7 +33,7 @@ export async function resolveConflictKeep(
     } else {
         // Drive wins: recycle the local copy, then promote the preserved Drive
         // copy into the canonical path. Drive already holds this version, so no
-        // upload is needed — the next sync sees local == Drive and skips.
+        // upload is needed: the next sync sees local == Drive and skips.
         if (existsSync(localAbs)) await recycleFiles(localDir, [conflict.relPath]);
         if (existsSync(conflictAbs)) await rename(conflictAbs, localAbs);
     }

@@ -4,7 +4,7 @@ import type { Request } from 'express';
 import { configDir } from '../crypto/keySource';
 
 /**
- * Append-only audit ledger for the backup file — who created it, who downloaded
+ * Append-only audit ledger for the backup file: who created it, who downloaded
  * it, and from which client. Stored SEPARATELY from the normal app log, and the
  * app only ever appends (never truncates/overwrites/deletes). It is intentionally
  * NOT part of the backup itself and is NOT touched by restore, so the evidence
@@ -113,7 +113,7 @@ export function fingerprintFromRequest(req: Request): ClientFingerprint {
     };
 }
 
-/** Identity used for mismatch detection — EXCLUDES browser version and time, per spec. */
+/** Identity used for mismatch detection: EXCLUDES browser version and time, per spec. */
 export function fingerprintIdentity(fp: ClientFingerprint): string {
     return [fp.ip, fp.os, fp.browser, fp.deviceId].join('|');
 }

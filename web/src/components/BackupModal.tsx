@@ -42,7 +42,7 @@ export function BackupModal({ onClose }: Props) {
         setNotice(null);
         try {
             const r = await createBackup(appPassword, passphrase, overwrite);
-            setNotice(`Backup created (${formatBytes(r.size)})${r.hasSession ? '' : ' — no active Proton session was included'}.`);
+            setNotice(`Backup created (${formatBytes(r.size)})${r.hasSession ? '' : ': no active Proton session was included'}.`);
             setPassphrase('');
             setConfirm('');
             setAppPassword('');
@@ -52,7 +52,7 @@ export function BackupModal({ onClose }: Props) {
             const msg = (err as Error).message;
             if (msg.includes('already exists')) {
                 setOverwrite(true);
-                setError('A backup already exists — download the current one first, then click "Replace existing".');
+                setError('A backup already exists: download the current one first, then click "Replace existing".');
             } else {
                 setError(msg);
             }
@@ -121,7 +121,7 @@ export function BackupModal({ onClose }: Props) {
                         than the one that created it. If that wasn't you, change your Proton password and create a fresh backup.
                         <div className="backup-actions">
                             <button className="btn btn-ghost" onClick={() => void onAcknowledge()}>
-                                This was me — clear warning
+                                This was me: clear warning
                             </button>
                         </div>
                     </div>
@@ -145,7 +145,7 @@ export function BackupModal({ onClose }: Props) {
                     </label>
                     <p className="modal-hint">
                         At least 12 characters with uppercase, lowercase, a number, and a symbol. You'll need the app password{' '}
-                        <em>and</em> this passphrase to restore — keep the passphrase somewhere safe (a password manager).
+                        <em>and</em> this passphrase to restore: keep the passphrase somewhere safe (a password manager).
                     </p>
                     {error && <div className="alert">{error}</div>}
                     {notice && <div className="alert alert-ok">{notice}</div>}

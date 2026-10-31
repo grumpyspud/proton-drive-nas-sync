@@ -6,8 +6,8 @@
 # Not affiliated with or endorsed by Proton AG.
 #
 # Multi-stage build -> a single runtime image.
-#   /config  — session blob, sync database, encryption keyfile (mount it)
-#   /data    — the local folders you pair with Drive folders (mount it)
+#   /config: session blob, sync database, encryption keyfile (mount it)
+#   /data:   the local folders you pair with Drive folders (mount it)
 # =============================================================================
 
 # ---- Stage 1: install dependencies + build the React frontend --------------

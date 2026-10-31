@@ -84,7 +84,7 @@ function driveSha1(fingerprint: string | null | undefined): string {
 /** True when the local file's content matches the Drive file's.
  *  Primary: SHA-1 (present only when the uploader declared `expectedSha1`).
  *  Fallback for files synced to Drive by another tool (no declared SHA-1):
- *  compare size — same size is treated as identical, so adopting an
+ *  compare size: same size is treated as identical, so adopting an
  *  already-populated Drive doesn't churn every file into a spurious conflict. */
 function contentMatches(localSha1: string, localSize: number, driveFp: string | null | undefined, driveNode: DriveEntry['node']): boolean {
     const sha = driveSha1(driveFp);
@@ -96,7 +96,7 @@ function contentMatches(localSha1: string, localSize: number, driveFp: string | 
  * One bidirectional sync cycle for a folder pair. Three-way reconcile of
  * local vs Drive vs last-synced (DB). Deletions are soft on BOTH sides
  * (trash on Drive, recycle to `.pdn-trash` locally) and are gated by the
- * deletion-rate tripwire — never a hard delete.
+ * deletion-rate tripwire: never a hard delete.
  *
  * Progress: emits `sync-start`, then per-item events and per-transfer
  * `transfer` events (cumulative bytes, percent) plus `overall` events
@@ -119,7 +119,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     let totalBytes = 0;
     let totalFiles = 0;
     // Overall rate is sampled from the container's NIC counters (/proc/net/dev),
-    // not the backend's per-tick estimate — that spiked to "—"/"1.0 GB/s" because
+    // not the backend's per-tick estimate: that spiked to "~"/"1.0 GB/s" because
     // progress callbacks fire in bursts. The NIC counter is stable ground truth.
     const netRate = new NetRateMeter();
     // Bytes in flight per relPath (parallel transfers), so the overall bar sums
@@ -182,7 +182,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     });
     checkAbort();
 
-    // Remove partial-transfer leftovers (never sync incomplete data — the walk
+    // Remove partial-transfer leftovers (never sync incomplete data: the walk
     // above already excluded them from the reconcile). Local = delete, Drive =
     // trash (soft-delete), never a hard wipe.
     for (const p of localPartials) {
@@ -264,7 +264,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
 
     // Record a conflict for manual review: the Drive version is preserved
     // locally as `<relPath>.conflict-<ts>`, but nothing is uploaded or
-    // overwritten — both sides stay put until the user picks a winner in the
+    // overwritten: both sides stay put until the user picks a winner in the
     // Conflicts panel. The file is frozen (skipped) until then.
     async function recordConflict(relPath: string, D: DriveEntry, L: LocalEntry, localSha1: string): Promise<void> {
         const ts = Date.now();
@@ -287,7 +287,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             conflictMtime: driveMtime(D.node),
             createdAt: ts,
         });
-        log(`conflict on ${relPath}: Drive version saved as ${path.basename(conflictRel)} — pending review`);
+        log(`conflict on ${relPath}: Drive version saved as ${path.basename(conflictRel)}: pending review`);
     }
 
     // ---- Folders (create both ways; defer deletions as a unit) ----
@@ -324,7 +324,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             if (!inDb) {
                 db.upsertNode({ pairId, relPath, kind: 'folder', driveUid: D.uid, driveFingerprint: null, localSha1: null, localSize: null, localMtime: null });
             }
-            // both present — nothing to do
+            // both present: nothing to do
         } else if (inLocal && !inDrive && inDb) {
             deletedFolderPrefixes.add(relPath);
             localDeletions.push({ relPath });
@@ -417,7 +417,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             // Frozen by an unresolved conflict: skip (still counts as processed).
             if (pendingConflictRelPaths.has(relPath)) {
                 result.skipped++;
-                onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'pending review — resolve in the Conflicts panel' });
+                onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'pending review: resolve in the Conflicts panel' });
                 return;
             }
 
@@ -468,7 +468,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                 } else {
                     await recordConflict(relPath, D, L, localSha1!);
                     result.conflicts++;
-                    onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'Drive version preserved — pending review' });
+                    onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'Drive version preserved: pending review' });
                 }
                 return;
             }
@@ -499,10 +499,10 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
                     } else {
                         await recordConflict(relPath, D, L, localSha1!);
                         result.conflicts++;
-                        onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'Drive version preserved — pending review' });
+                        onProgress?.({ type: 'item', action: 'conflict', relPath, message: 'Drive version preserved: pending review' });
                     }
                 } else {
-                    // unchanged — fill any null fingerprints with observed values
+                    // unchanged: fill any null fingerprints with observed values
                     db.upsertNode({
                         pairId,
                         relPath,
@@ -559,7 +559,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
             onProgress?.({ type: 'log', message: line });
             onProgress?.({ type: 'item', action: 'skip-error', relPath, message: reason });
         } finally {
-            // A file is "processed" once its three-way merge finishes — including
+            // A file is "processed" once its three-way merge finishes: including
             // unchanged files (the common case on a steady-state sync). Bump + emit
             // so the overall bar advances through the skip phase instead of
             // stalling at "0 files, 0.0%" while the log scrolls skips.
@@ -572,7 +572,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     // Files are independent (three-way merge per relPath; their parents are the
     // folders created above), so 2–4 parallel transfers roughly multiply
     // I/O-bound throughput. On abort we stop pulling new files, let in-flight
-    // transfers finish, then throw — so no worker touches the DB after syncOnce
+    // transfers finish, then throw: so no worker touches the DB after syncOnce
     // returns and the caller can close it safely.
     const transferConcurrency = Math.min(MAX_TRANSFER_CONCURRENCY, Math.max(1, Math.floor(options.transferConcurrency ?? DEFAULT_TRANSFER_CONCURRENCY)));
     {

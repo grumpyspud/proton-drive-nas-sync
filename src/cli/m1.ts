@@ -113,7 +113,7 @@ async function demo() {
     logger.info(`[11] cleanup: folder permanently deleted (${JSON.stringify(delResults.map((r) => (r.ok ? `ok` : `ERR ${(r as any).error?.message}`)))})`);
 
     await rm(tmp, { recursive: true, force: true });
-    logger.info('M1 demo complete — all operations verified.');
+    logger.info('M1 demo complete: all operations verified.');
 }
 
 async function countTrashed(sdk: Awaited<ReturnType<typeof loginInteractive>>['sdk']): Promise<number> {

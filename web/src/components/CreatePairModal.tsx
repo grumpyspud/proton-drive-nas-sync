@@ -91,7 +91,7 @@ export function CreatePairModal({ volumes, onCreated, onClose }: Props) {
                 {!safe && (
                     <div className="alert-warn">
                         ⚠ This folder is not on a mounted volume. Files would be written inside the
-                        container and lost on rebuild/update — not to your NAS. Choose a folder under a
+                        container and lost on rebuild/update: not to your NAS. Choose a folder under a
                         mounted volume{volumes.length > 0 ? ` (${volumes.map((v) => v.path).join(', ')})` : ''}.
                     </div>
                 )}
@@ -117,7 +117,7 @@ export function CreatePairModal({ volumes, onCreated, onClose }: Props) {
                         )}
                     </div>
                     <span className="schedule-hint">
-                        {autoSync ? 'Sync automatically on this schedule.' : 'Manual — sync only when you click Sync.'}
+                        {autoSync ? 'Sync automatically on this schedule.' : 'Manual: sync only when you click Sync.'}
                     </span>
                 </div>
 

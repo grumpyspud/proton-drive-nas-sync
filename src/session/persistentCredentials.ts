@@ -23,7 +23,7 @@ interface PersistedSession {
  * (they exist only in memory during sign-in); what persists is the derived
  * session state (refresh token + user key password) needed to resume.
  *
- * The access token is intentionally NOT persisted — it is short-lived and is
+ * The access token is intentionally NOT persisted: it is short-lived and is
  * re-issued from the refresh token on resume.
  */
 export class PersistentCredentials implements SessionCredentials {
@@ -78,7 +78,7 @@ export class PersistentCredentials implements SessionCredentials {
             this._telemetryEnabled = data.telemetryEnabled;
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-                return; // no persisted session — not an error
+                return; // no persisted session: not an error
             }
             throw error;
         }

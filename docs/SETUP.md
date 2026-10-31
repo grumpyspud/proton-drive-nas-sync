@@ -1,17 +1,17 @@
-# Setup Guide — Proton Drive NAS Sync
+# Setup Guide: Proton Drive NAS Sync
 
 A step-by-step first-time setup walkthrough with screenshots. Covers deploying the
 container, signing in to Proton Drive (including 2FA, two-password, and CAPTCHA),
 and using the dashboard.
 
-> **⚠️ Third-party application — not affiliated with, endorsed by, or supported by
+> **⚠️ Third-party application: not affiliated with, endorsed by, or supported by
 > Proton AG.** It's a good idea to test against a throwaway Proton account first.
 > All screenshots below use fake placeholder data.
 >
 > **⚠️ Disclaimer:** This software is provided "as is", without warranty of any
 > kind. You are solely responsible for your data. The author is not liable for any
-> loss, deletion, corruption, or unintended modification of files — locally or in
-> Proton Drive — arising from your use of this application. Always keep an
+> loss, deletion, corruption, or unintended modification of files: locally or in
+> Proton Drive: arising from your use of this application. Always keep an
 > independent backup of anything you can't afford to lose.
 
 For deployment specifics (NAS bind mounts, environment variables, security
@@ -41,7 +41,7 @@ docker compose up -d
 
 Then open `https://<host>:8787`. On first load you'll land on the Proton sign-in
 screen. The UI serves HTTPS with a self-signed certificate by default, so your
-browser will warn "not secure" the first time — accept it to continue (or see
+browser will warn "not secure" the first time: accept it to continue (or see
 [DEPLOY.md](DEPLOY.md) to provide your own certificate or disable TLS).
 
 The container needs two persistent paths:
@@ -56,7 +56,7 @@ compose example).
 
 ---
 
-## 3. First run — set an app password (recommended)
+## 3. First run: set an app password (recommended)
 
 Before signing in to Proton, add a second layer of protection by setting an
 **app password**. It locks the whole dashboard behind its own password on top of
@@ -67,7 +67,7 @@ Click **"Set app password"** below the sign-in form:
 ![Set app password](screenshots/02-set-app-password.png)
 
 Enter a new password (minimum 6 characters) and confirm it. It is stored as a
-scrypt hash — never in plaintext. You can change it later from the top bar
+scrypt hash: never in plaintext. You can change it later from the top bar
 (**🔒 App password**).
 
 > If you don't set one, the app shows a warning banner and the dashboard is open
@@ -104,12 +104,12 @@ back here.
 3. The snippet pops up your token (and copies it to the clipboard when allowed).
 4. Paste the token into **Verification token** here and press **Continue**.
 
-> **Note — the "Copy snippet" button may not copy.**
+> **Note: the "Copy snippet" button may not copy.**
 > The button uses the browser clipboard API, which some browsers (notably
 > **Firefox**) may silently block. If nothing is copied, just select the code in
 > the box and copy it manually (`Ctrl+C` / right-click → Copy).
 
-> **Note — you may need to type `allow pasting` first.**
+> **Note: you may need to type `allow pasting` first.**
 > The first time you open the DevTools console on the verification tab, the browser
 > may block pasting and show an "allow pasting" notice. Type `allow pasting` and
 > press Enter, then paste the snippet. (Usually only needed once per browser.)
@@ -143,26 +143,26 @@ This is your home base:
 
 ![Dashboard (dark)](screenshots/06-dashboard.png)
 
-- **Left — Sync activity:** live progress bars (files processed, bytes, and
+- **Left: Sync activity:** live progress bars (files processed, bytes, and
   network rate), the last sync
   summary, and a status badge (Idle / Syncing / Paused).
-- **Right — Local storage:** each data volume mounted into the container, with
+- **Right: Local storage:** each data volume mounted into the container, with
   used/total and a fill bar.
-- **Right — Proton Drive Storage:** your Proton Drive usage, with a warning when
+- **Right: Proton Drive Storage:** your Proton Drive usage, with a warning when
   space runs low.
-- **Right — Folder pairs:** the folders you're syncing, with per-pair Sync / Trash /
+- **Right: Folder pairs:** the folders you're syncing, with per-pair Sync / Trash /
   Remove actions, an Auto-sync toggle, and a Dedupe Scan button.
 
 The top bar holds the global controls:
 
-- **⏸ Pause / ▶ Resume** — pause or resume all syncing.
-- **⏹ Stop** (shown only while syncing) — stop the current sync.
-- **＋ Create Sync Pair** — add a folder pair.
-- **Logs ▾** — open the **Sync log**, **Activity log**, or **Error log** (see
+- **⏸ Pause / ▶ Resume**: pause or resume all syncing.
+- **⏹ Stop** (shown only while syncing): stop the current sync.
+- **＋ Create Sync Pair**: add a folder pair.
+- **Logs ▾**: open the **Sync log**, **Activity log**, or **Error log** (see
   [step 13](#13-viewing-logs)).
-- **⚙ Settings** — **💾 Backup**, **🔒 App password**, **🔐 Lock**,
+- **⚙ Settings**: **💾 Backup**, **🔒 App password**, **🔐 Lock**,
   **☀ Light / 🌙 Dark**, and **Max concurrent transfers**.
-- **Sign out** — signs out of Proton and removes all folder pairs (with a confirmation pop-up; your synced files are not touched).
+- **Sign out**: signs out of Proton and removes all folder pairs (with a confirmation pop-up; your synced files are not touched).
 
 ---
 
@@ -173,14 +173,14 @@ folder on the NAS and the matching Proton Drive folder:
 
 ![Add a folder pair](screenshots/07-add-pair-folder-picker.png)
 
-- **NAS / local folder** — an absolute path under a mounted volume (e.g.
+- **NAS / local folder**: an absolute path under a mounted volume (e.g.
   `/data/photos`). You can browse subfolders or click **New folder** to create
-  one. The local folder must be on a mounted volume — a path inside the container
+  one. The local folder must be on a mounted volume: a path inside the container
   (not on your NAS) is rejected with a warning, so a sync can't accidentally write
   to the container itself.
-- **Proton Drive folder** — pick an existing Drive folder, or **My Files (entire
+- **Proton Drive folder**: pick an existing Drive folder, or **My Files (entire
   drive)** to sync the whole drive.
-- **Sync schedule** — either **Manual** (sync only when you click **Sync**) or
+- **Sync schedule**: either **Manual** (sync only when you click **Sync**) or
   **Auto-sync** on a schedule, with a frequency from **1 min** through **Monthly**.
 
 Click **Create pair**, then **Sync** to run it immediately.
@@ -223,7 +223,7 @@ still can't open it without your secrets. Download it and store it somewhere saf
 
 ## 12. Restore your config
 
-Restore is available from the sign-in / unlock screen (before any Proton login) —
+Restore is available from the sign-in / unlock screen (before any Proton login) ~
 exactly where you'd need it on a fresh NAS or rebuild.
 
 ![Restore config](screenshots/09-restore.png)
@@ -246,29 +246,29 @@ To restore:
 
 The **Logs ▾** menu has three views:
 
-- **Sync log** — the recent server log, searchable and downloadable (written at
+- **Sync log**: the recent server log, searchable and downloadable (written at
   `/config/sync.log` and rotated when it grows large):
 
   ![Sync log](screenshots/10-logs.png)
 
-- **Activity log** — the most recent sync actions from the current session
+- **Activity log**: the most recent sync actions from the current session
   (capped at 200 events), shown in the browser:
 
   ![Activity log](screenshots/17-activity-log.png)
 
-- **Error log** — a separate, persistent log of **errors**, **conflicts**, and
+- **Error log**: a separate, persistent log of **errors**, **conflicts**, and
   **warnings** only:
 
   ![Error log](screenshots/21-error-log.png)
 
 The **Logs ▾** button itself is a live indicator: it turns **red** when there are
 new (unseen) errors, or **yellow** for new warnings/conflicts. Open **Logs ▾ →
-Error log** to review them — entries are colour-coded by severity (**error** red,
+Error log** to review them: entries are colour-coded by severity (**error** red,
 **conflict** orange, **warning** yellow). Three actions sit at the top:
 
-- **Reset** — mark the current entries as seen (clears the button back to normal).
-- **Clear** — delete every entry.
-- **Save** — download the whole log as a `.txt` file.
+- **Reset**: mark the current entries as seen (clears the button back to normal).
+- **Clear**: delete every entry.
+- **Save**: download the whole log as a `.txt` file.
 
 The error log exists because the main sync log is rotated once it grows large, so
 an early problem on a long sync could scroll away. Errors, conflicts, and warnings

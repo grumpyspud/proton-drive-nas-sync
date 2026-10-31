@@ -2,7 +2,7 @@
  * Comlink `Endpoint` bound to a `node:worker_threads` `Worker` (on the main
  * side) or `parentPort` (on the worker side).
  *
- * Replicates the function at `comlink/dist/esm/node-adapter.mjs` — the comlink
+ * Replicates the function at `comlink/dist/esm/node-adapter.mjs`: the comlink
  * package has no `exports` map, so importing a `.mjs` sub-path trips up
  * TypeScript at typecheck time.  We vendor a minimal typed copy instead.
  */

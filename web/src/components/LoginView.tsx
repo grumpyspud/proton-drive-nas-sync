@@ -17,7 +17,7 @@ interface HvChallenge {
 
 /**
  * Proton's human-verification (CAPTCHA) page posts the solved token back via
- * `window.parent.postMessage()`, which only works when embedded as an iframe —
+ * `window.parent.postMessage()`, which only works when embedded as an iframe ~
  * and verify.proton.me's CSP `frame-ancestors` only allows Proton's own origins.
  * So a third-party app cannot auto-receive it. This snippet, pasted into the
  * verification tab's devtools console BEFORE solving, captures the composite
@@ -106,7 +106,7 @@ export function LoginView({ onLogin, theme, onToggleTheme, appPasswordEnabled, o
         try {
             await navigator.clipboard.writeText(CAPTURE_SNIPPET);
         } catch {
-            /* clipboard unavailable — user can select manually */
+            /* clipboard unavailable: user can select manually */
         }
     }
 
@@ -159,7 +159,7 @@ export function LoginView({ onLogin, theme, onToggleTheme, appPasswordEnabled, o
                                     In that tab, open DevTools (<code>F12</code>) → <strong>Console</strong> and paste the
                                     snippet below <em>before</em> solving.
                                 </li>
-                                <li>Solve the CAPTCHA — the snippet pops up your token.</li>
+                                <li>Solve the CAPTCHA: the snippet pops up your token.</li>
                                 <li>Paste the token back here and press <strong>Sign in</strong>.</li>
                             </ol>
                             <div className="hv-actions">
@@ -196,7 +196,7 @@ export function LoginView({ onLogin, theme, onToggleTheme, appPasswordEnabled, o
                 </div>
 
                 <p className="disclaimer">
-                    Third-party application — not affiliated with, endorsed by, or supported by Proton AG. Your credentials are
+                    Third-party application: not affiliated with, endorsed by, or supported by Proton AG. Your credentials are
                     used only to authenticate with Proton Drive and are never stored in plaintext.
                 </p>
             </div>

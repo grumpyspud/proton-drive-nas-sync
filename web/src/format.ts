@@ -21,7 +21,7 @@ export function formatDate(ms: number): string {
 }
 
 export function formatSpeed(bps: number): string {
-    if (!bps || bps < 0) return '—';
+    if (!bps || bps < 0) return '~';
     const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
     let v = bps;
     let i = 0;

@@ -9,7 +9,7 @@ interface Props {
 
 /**
  * Confirmation overlay for signing out. Signing out is a full reset of the app's
- * sync state — it removes every folder pair and each pair's local trash — so it
+ * sync state: it removes every folder pair and each pair's local trash: so it
  * warns the user first. The user's actual synced files are left untouched.
  */
 export function SignOutModal({ pairCount, onClose, onSignedOut }: Props) {
@@ -51,7 +51,7 @@ export function SignOutModal({ pairCount, onClose, onSignedOut }: Props) {
                     </li>
                 </ul>
                 <p className="modal-hint">
-                    No other data will be deleted — your synced files stay exactly where they are on your NAS and in Proton Drive. You'll need to sign in again
+                    No other data will be deleted: your synced files stay exactly where they are on your NAS and in Proton Drive. You'll need to sign in again
                     and recreate your folder pairs.
                 </p>
                 {error && <div className="alert">{error}</div>}

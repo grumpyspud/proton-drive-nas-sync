@@ -8,27 +8,27 @@ and Proton Drive.
 >
 > **⚠️ Disclaimer:** This software is provided "as is", without warranty of any
 > kind. You are solely responsible for your data. The author is not liable for any
-> loss, deletion, corruption, or unintended modification of files — locally or in
-> Proton Drive — arising from your use of this application. Always keep an
+> loss, deletion, corruption, or unintended modification of files: locally or in
+> Proton Drive: arising from your use of this application. Always keep an
 > independent backup of anything you can't afford to lose.
 
 ## Features
 
 - **Back up** folders from the NAS to Proton Drive.
 - **Restore** folders from Proton Drive back to the NAS.
-- **Bidirectional folder-pair sync** — additions, edits, and deletions on either
+- **Bidirectional folder-pair sync**: additions, edits, and deletions on either
   side are mirrored to the other.
-- **Deletion safety** — source-availability gate, a deletion-rate tripwire, and
+- **Deletion safety**: source-availability gate, a deletion-rate tripwire, and
   trash-before-delete (Drive `trashNodes` / local recycle) so a missing folder or
   drive can never wipe your data.
-- **Web UI** — Proton-style login (SRP + optional 2FA + optional mailbox
+- **Web UI**: Proton-style login (SRP + optional 2FA + optional mailbox
   password), folder-pair manager, and a live sync dashboard with progress bars
   (files processed + bytes + network rate), storage usage, and low-space warnings.
-- **Flexible schedules** — manual or auto-sync, from every 1 minute up to monthly.
-- **Duplicate-file scan** — find and recycle duplicate files within a pair, with a
+- **Flexible schedules**: manual or auto-sync, from every 1 minute up to monthly.
+- **Duplicate-file scan**: find and recycle duplicate files within a pair, with a
   minimum-size filter and an ignore list.
-- **Configurable concurrency** — 1–4 parallel transfers.
-- **Encrypted-at-rest credentials** — only an AES-256-GCM encrypted session blob
+- **Configurable concurrency**: 1–4 parallel transfers.
+- **Encrypted-at-rest credentials**: only an AES-256-GCM encrypted session blob
   is persisted; passwords are never stored.
 
 ## How it works
@@ -84,7 +84,7 @@ implied.** By using it you accept full responsibility for your data and for the
 outcome of running it.
 
 The author is **not liable** for any loss, deletion, corruption, or unintended
-modification of files — whether on your NAS or in your Proton Drive account —
+modification of files: whether on your NAS or in your Proton Drive account ~
 arising from the use or misuse of this application. This includes, without
 limitation, software defects, misconfiguration, network or storage failures,
 interrupted operations, and sync conflicts.

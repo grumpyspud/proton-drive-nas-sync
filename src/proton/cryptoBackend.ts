@@ -6,13 +6,13 @@ import type { SrpApiInterface } from '../../vendor/proton-drive-sdk-account/srp'
 import { initOpenPGPCryptoModule } from './crypto';
 
 /**
- * Crypto abstraction — the swap point for Proton's planned cryptographic model
+ * Crypto abstraction: the swap point for Proton's planned cryptographic model
  * change (end 2026 / early 2027).
  *
  * Everything the app does cryptographically flows through a CryptoBackend:
- *   - `openPGPCryptoModule` — the Drive SDK's file-encryption module.
- *   - `cryptoProxy`        — the keyring/address unlock proxy (account module).
- *   - `srpApi`             — SRP login primitives.
+ *   - `openPGPCryptoModule`: the Drive SDK's file-encryption module.
+ *   - `cryptoProxy`       : the keyring/address unlock proxy (account module).
+ *   - `srpApi`            : SRP login primitives.
  *
  * When Proton ships the new model, add a second backend (e.g.
  * `createNewModelBackend()`) and select it at startup. The Sync/Backup/Restore
@@ -25,7 +25,7 @@ export interface CryptoBackend {
     readonly srpApi: SrpApiInterface;
 }
 
-/** The current (pre-migration) OpenPGP backend. Initialised once per process —
+/** The current (pre-migration) OpenPGP backend. Initialised once per process ~
  *  the crypto package's `CryptoProxy` endpoint is a process-global singleton
  *  that throws "already initialised" if `setEndpoint` is called twice. Cached
  *  as a PROMISE so concurrent first calls (login + resume racing) share one

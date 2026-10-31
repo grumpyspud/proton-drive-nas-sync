@@ -8,9 +8,9 @@ import { logger } from '../logger';
  * Master key for encrypting the persisted session blob.
  *
  * Resolution order:
- *   1. PDN_ENCRYPTION_KEY (64 hex chars = 32 bytes) — preferred for production,
+ *   1. PDN_ENCRYPTION_KEY (64 hex chars = 32 bytes): preferred for production,
  *      e.g. a Docker secret surfaced as an env var.
- *   2. PDN_ENCRYPTION_KEY_FILE (path) or `<configDir>/encryption.key` — a keyfile.
+ *   2. PDN_ENCRYPTION_KEY_FILE (path) or `<configDir>/encryption.key`: a keyfile.
  *   3. If neither exists, auto-provision a random key at the keyfile path (0600).
  *      This is a dev convenience; production should mount a real secret.
  */

@@ -9,7 +9,7 @@ import { createSessionCredentials } from '../session';
 import { loginInteractive } from './auth';
 
 /**
- * M2 — encrypted session persistence + resume.
+ * M2: encrypted session persistence + resume.
  *
  *   login   -> interactive login, persist encrypted session blob, list root
  *   resume  -> load persisted blob, refresh token, list root (NO credentials)

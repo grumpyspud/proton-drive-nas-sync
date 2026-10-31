@@ -16,7 +16,7 @@ export function prompt(question: string): Promise<string> {
  */
 export function promptHidden(question: string): Promise<string> {
     if (!process.stdin.isTTY) {
-        return prompt(`${question} (input will be visible — not a TTY): `);
+        return prompt(`${question} (input will be visible: not a TTY): `);
     }
 
     return new Promise((resolve) => {

@@ -26,7 +26,7 @@ export function ActivityLogModal({ items, totalItems, onClose }: Props) {
                         : `${items.length.toLocaleString()} event${items.length === 1 ? '' : 's'}`}
                 </div>
                 {shown.length === 0 ? (
-                    <div className="muted">No activity yet — run a sync to see events here.</div>
+                    <div className="muted">No activity yet: run a sync to see events here.</div>
                 ) : (
                     <div className="activity-log-body">
                         <ul>
