@@ -120,6 +120,8 @@ function clampDedupeMinBytes(value: unknown): number {
 let syncing = false;
 let paused = false;
 let stopRequested = false;
+let syncingPairId: string | null = null;
+const hashJobs = new Map<string, { total: number; done: number; hashed: number }>();
 
 interface PendingDeletion {
     pairId: string;
@@ -135,6 +137,7 @@ let pendingDeletion: PendingDeletion | null = null;
 async function runSync(pairId: string, allowDeletions = false): Promise<boolean> {
     if (syncing || paused) return false;
     syncing = true;
+    syncingPairId = pairId;
     stopRequested = false;
     pendingDeletion = null;
     const db = new SyncDB(syncDbPath());
@@ -181,6 +184,7 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
         return true;
     } finally {
         syncing = false;
+        syncingPairId = null;
         stopRequested = false;
         db.close();
     }
@@ -848,37 +852,70 @@ app.get('/api/pairs/:id/duplicates', requireAuth, (req, res) => {
 });
 
 // Backfill content hashes for files pulled from Drive before the streaming-hash
-// change (local_sha1 NULL). Runs on demand when the user starts a dedupe scan, so
-// the scan sees every file without waiting for the next sync. Broadcasts
-// `hash-progress` so the UI can render the pair's button as a progress bar.
-app.post('/api/pairs/:id/hash-missing', requireAuth, async (req, res) => {
+// change (local_sha1 NULL). Runs FIRE-AND-FORGET in the background when the user
+// starts a dedupe scan: the POST returns immediately and the job streams
+// `hash-progress`/`hash-complete`/`hash-cancelled` over SSE, so the button shows
+// progress without holding the request open. A sync starting for the same pair
+// cancels the job via the `syncingPairId` checks below — the sync re-hashes what it
+// needs, and a concurrent backfill could otherwise write a stale hash over a
+// freshly re-downloaded file.
+async function runHashBackfill(pairId: string, localDir: string): Promise<void> {
+    const db = new SyncDB(syncDbPath());
+    try {
+        const nodes = db.listNodesWithNullSha1(pairId);
+        const job = { total: nodes.length, done: 0, hashed: 0 };
+        hashJobs.set(pairId, job);
+        for (const node of nodes) {
+            if (syncingPairId === pairId) {
+                broadcast({ type: 'hash-cancelled', pairId });
+                return;
+            }
+            const absPath = path.join(localDir, node.relPath);
+            let sha1: string | null = null;
+            let size = 0;
+            let mtimeMs = 0;
+            try {
+                const st = await stat(absPath);
+                sha1 = await sha1OfFile(absPath);
+                size = st.size;
+                mtimeMs = st.mtimeMs;
+            } catch {
+                // missing or unreadable — leave its hash null; a later sync re-hashes it
+            }
+            if (syncingPairId === pairId) {
+                broadcast({ type: 'hash-cancelled', pairId });
+                return;
+            }
+            if (sha1 !== null) {
+                db.upsertNode({ ...node, localSha1: sha1, localSize: size, localMtime: mtimeMs });
+                job.hashed++;
+            }
+            job.done++;
+            broadcast({ type: 'hash-progress', pairId, done: job.done, total: job.total });
+        }
+        broadcast({ type: 'hash-complete', pairId, hashed: job.hashed, total: job.total });
+    } finally {
+        hashJobs.delete(pairId);
+        db.close();
+    }
+}
+
+app.post('/api/pairs/:id/hash-missing', requireAuth, (req, res) => {
     const pair = getPairOrNull(req.params.id as string);
     if (!pair) {
         res.status(404).json({ error: 'Pair not found' });
         return;
     }
-    const db = new SyncDB(syncDbPath());
-    try {
-        const nodes = db.listNodesWithNullSha1(pair.id);
-        let hashed = 0;
-        let done = 0;
-        for (const node of nodes) {
-            const absPath = path.join(pair.localDir, node.relPath);
-            try {
-                const st = await stat(absPath);
-                const sha1 = await sha1OfFile(absPath);
-                db.upsertNode({ ...node, localSha1: sha1, localSize: st.size, localMtime: st.mtimeMs });
-                hashed++;
-            } catch {
-                // missing or unreadable — leave its hash null; a later sync re-hashes it
-            }
-            done++;
-            broadcast({ type: 'hash-progress', pairId: pair.id, done, total: nodes.length });
-        }
-        res.json({ hashed, total: nodes.length });
-    } finally {
-        db.close();
+    if (syncingPairId === pair.id) {
+        res.status(409).json({ error: 'A sync is in progress for this pair — retry after it finishes.' });
+        return;
     }
+    if (hashJobs.has(pair.id)) {
+        res.json({ total: hashJobs.get(pair.id)!.total, alreadyRunning: true });
+        return;
+    }
+    void runHashBackfill(pair.id, pair.localDir);
+    res.json({ started: true });
 });
 
 app.post('/api/pairs/:id/duplicates/ignore', requireAuth, (req, res) => {

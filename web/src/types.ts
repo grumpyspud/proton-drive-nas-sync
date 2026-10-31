@@ -42,6 +42,8 @@ export type SyncProgressEvent =
     | { type: 'transfer'; relPath: string; direction: TransferDirection; bytes: number; total: number; percent: number }
     | { type: 'overall'; transferredBytes: number; totalBytes: number; percent: number; speedBps: number; filesDone: number; totalFiles: number }
     | { type: 'hash-progress'; pairId: string; done: number; total: number }
+    | { type: 'hash-complete'; pairId: string; hashed: number; total: number }
+    | { type: 'hash-cancelled'; pairId: string }
     | { type: 'item'; action: SyncAction; relPath: string; message?: string }
     | { type: 'sync-complete'; pairId: string; summary: SyncSummary }
     | { type: 'sync-error'; message: string }

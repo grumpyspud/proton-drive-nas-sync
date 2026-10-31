@@ -44,6 +44,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [dedupePair, setDedupePair] = useState<Pair | null>(null);
     const [hashingPair, setHashingPair] = useState<{ pairId: string; done: number; total: number } | null>(null);
     const hashingRef = useRef(false);
+    const pendingDedupePair = useRef<Pair | null>(null);
     const [reconnecting, setReconnecting] = useState(false);
     const [transferConcurrency, setTransferConcurrency] = useState(3);
     const [showCreatePair, setShowCreatePair] = useState(false);
@@ -64,17 +65,17 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
 
     const openDedupe = useCallback(async (p: Pair) => {
         setError(null);
+        pendingDedupePair.current = p;
         hashingRef.current = true;
         setHashingPair({ pairId: p.id, done: 0, total: 0 });
         try {
             await hashMissing(p.id);
         } catch (err) {
-            setError((err as Error).message);
-        } finally {
+            pendingDedupePair.current = null;
             hashingRef.current = false;
             setHashingPair(null);
+            setError((err as Error).message);
         }
-        setDedupePair(p);
     }, []);
 
     const loadStorage = useCallback(async () => {
@@ -164,6 +165,23 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     break;
                 case 'hash-progress':
                     if (hashingRef.current) setHashingPair({ pairId: ev.pairId, done: ev.done, total: ev.total });
+                    break;
+                case 'hash-complete':
+                    if (hashingRef.current && ev.pairId === pendingDedupePair.current?.id) {
+                        hashingRef.current = false;
+                        setHashingPair(null);
+                        const p = pendingDedupePair.current;
+                        pendingDedupePair.current = null;
+                        if (p) setDedupePair(p);
+                    }
+                    break;
+                case 'hash-cancelled':
+                    if (hashingRef.current && ev.pairId === pendingDedupePair.current?.id) {
+                        hashingRef.current = false;
+                        setHashingPair(null);
+                        pendingDedupePair.current = null;
+                        setError('Hashing was interrupted by a sync starting for this pair. Click Dedupe Scan again after it finishes.');
+                    }
                     break;
                 case 'transfer':
                     setActive((prev) => {

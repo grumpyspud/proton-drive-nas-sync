@@ -48,6 +48,8 @@ export type SyncProgressEvent =
           totalFiles: number;
       }
     | { type: 'hash-progress'; pairId: string; done: number; total: number }
+    | { type: 'hash-complete'; pairId: string; hashed: number; total: number }
+    | { type: 'hash-cancelled'; pairId: string }
     | { type: 'item'; action: SyncAction; relPath: string; message?: string }
     | { type: 'sync-complete'; pairId: string; summary: SyncSummary }
     | { type: 'sync-error'; message: string }

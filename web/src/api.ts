@@ -217,7 +217,7 @@ export function getDuplicates(id: string, minBytes = 0): Promise<{ groups: Dupli
     return request(`/api/pairs/${encodeURIComponent(id)}/duplicates?minBytes=${minBytes}`);
 }
 
-export function hashMissing(id: string): Promise<{ hashed: number; total: number }> {
+export function hashMissing(id: string): Promise<{ started?: boolean; total?: number; alreadyRunning?: boolean }> {
     return request(`/api/pairs/${encodeURIComponent(id)}/hash-missing`, { method: 'POST' });
 }
 
