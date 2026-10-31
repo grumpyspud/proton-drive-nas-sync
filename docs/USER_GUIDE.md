@@ -4,6 +4,12 @@ A reference for every feature and option in the web UI.
 
 > **⚠️ Third-party application — not affiliated with, endorsed by, or supported by
 > Proton AG.**
+>
+> **⚠️ Disclaimer:** This software is provided "as is", without warranty of any
+> kind. You are solely responsible for your data. The author is not liable for any
+> loss, deletion, corruption, or unintended modification of files — locally or in
+> Proton Drive — arising from your use of this application. Always keep an
+> independent backup of anything you can't afford to lose.
 
 For first-time setup with screenshots see [SETUP.md](SETUP.md); for deployment,
 environment variables, and security see [DEPLOY.md](DEPLOY.md).

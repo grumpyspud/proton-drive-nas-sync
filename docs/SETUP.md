@@ -7,6 +7,12 @@ and using the dashboard.
 > **⚠️ Third-party application — not affiliated with, endorsed by, or supported by
 > Proton AG.** It's a good idea to test against a throwaway Proton account first.
 > All screenshots below use fake placeholder data.
+>
+> **⚠️ Disclaimer:** This software is provided "as is", without warranty of any
+> kind. You are solely responsible for your data. The author is not liable for any
+> loss, deletion, corruption, or unintended modification of files — locally or in
+> Proton Drive — arising from your use of this application. Always keep an
+> independent backup of anything you can't afford to lose.
 
 For deployment specifics (NAS bind mounts, environment variables, security
 hardening, troubleshooting), see [DEPLOY.md](DEPLOY.md). For a reference of every
