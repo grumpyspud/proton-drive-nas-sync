@@ -15,7 +15,7 @@ import { nodeName } from '../fs/files';
 import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
 import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce, SyncAbortedError, DEFAULT_TRANSFER_CONCURRENCY, MAX_TRANSFER_CONCURRENCY } from '../engine/sync';
-import { walkLocalTree } from '../engine/walk';
+import { diffLocal, localDiffEmpty } from '../engine/localDiff';
 import { pollEvents } from '../proton/events';
 import { mapEventsToTargets } from '../engine/mapping';
 import { DeletionTripwireError } from '../engine/safety';
@@ -1362,31 +1362,6 @@ function dueAutoSyncPairs(db: SyncDB): Pair[] {
     );
 }
 
-/**
- * Cheap local change detection: stat-scan the pair's local dir and compare file
- * mtime/size and folder presence against the last-synced state in sync.db. No
- * hashing. Returns true when anything is new, modified, or missing. Folders are
- * matched by presence only (their mtime changes on any child change, which the
- * file-level checks already capture).
- */
-async function localDirty(db: SyncDB, pair: Pair): Promise<boolean> {
-    const stored = await db.allNodesAsync(pair.id);
-    const storedByRel = new Map(stored.map((n) => [n.relPath, n]));
-    const local = await walkLocalTree(pair.localDir);
-    const localByRel = new Set<string>();
-    for (const e of local) {
-        localByRel.add(e.relPath);
-        const s = storedByRel.get(e.relPath);
-        if (!s) return true; // new on disk
-        if (s.kind !== e.kind) return true; // file <-> folder switch
-        if (e.kind === 'file' && (s.localSize !== e.size || s.localMtime !== e.mtimeMs)) return true;
-    }
-    for (const rel of storedByRel.keys()) {
-        if (!localByRel.has(rel)) return true; // deleted locally
-    }
-    return false;
-}
-
 async function schedulerTick(): Promise<void> {
     // Never auto-trigger while a sync is already running (manual or scheduled),
     // while paused, or while a deletion confirmation is awaiting the user.
@@ -1466,7 +1441,11 @@ async function schedulerTick(): Promise<void> {
             }
             let dirty = false;
             try {
-                dirty = await localDirty(db, p);
+                const diff = await diffLocal(db, p);
+                dirty = !localDiffEmpty(diff);
+                if (dirty) {
+                    logger.info(`local: pair ${p.id} -> +${diff.added.length} ~${diff.modified.length} -${diff.removed.length}`);
+                }
             } catch (error) {
                 // A missing/erroring local dir is a real problem the full sync
                 // surfaces properly (assertSourceAvailable); trigger it instead of
