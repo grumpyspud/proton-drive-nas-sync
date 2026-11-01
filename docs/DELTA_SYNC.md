@@ -251,12 +251,9 @@ Scheduler builds per-pair targeted change sets and runs the M0 per-node reconcil
 
 ---
 
-## 11. Open decisions (need input before building)
+## 11. Resolved decisions
 
-1. **Deletion-tripwire granularity.** Recommend: batch all deletions per tick (plus folder-delete subtree counts) and run `checkDeletionTripwire` over the batch. This preserves the safety net without false-positives on legitimate single-file deletes. Confirm this is acceptable, or whether you want a stricter aggregate (e.g. a rolling window across ticks).
-
-2. **Self-write echo.** Recommend accepting the idempotent no-op (simplest, correct). The `recentlySyncedUid` TTL suppression set is a later micro-optimization. Confirm.
-
-3. **Directory-mtime pruning** (local scan optimization). Not required for the delta path; defer until measurement shows the stat-scan is a bottleneck. Confirm deferral.
-
-4. **Move/rename scope.** Recommend handling file moves first (bounded), folder moves as a folder-level subtree op later. Confirm the order of attack within M4.
+1. **Deletion-tripwire granularity.** Batch all deletions per tick (plus folder-delete subtree counts) and run `checkDeletionTripwire` over the batch. Confirmed.
+2. **Self-write echo.** Accept the idempotent no-op - we write the new fingerprint to `sync.db` during the transfer, so re-processing our own echo hits "unchanged -> skip". The `recentlySyncedUid` TTL set is a later micro-optimization only if the no-op ever shows up as a cost. Confirmed.
+3. **Directory-mtime pruning** (local scan optimization). Deferred. Intended approach: check folder change times and narrow down until reaching the changed file(s). Note the pruning only helps for add/remove/rename - content edits do not bump a directory's mtime. Revisit only if measurement shows the stat-scan is a bottleneck.
+4. **Move/rename scope.** File moves first (bounded), folder moves as a folder-level subtree op later. Confirmed.
