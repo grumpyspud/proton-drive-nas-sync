@@ -669,6 +669,77 @@ app.get('/api/drive/list', requireAuth, async (req, res) => {
     }
 });
 
+app.get('/api/drive/trash', requireAuth, async (_req, res) => {
+    try {
+        const sdk = authService.getSession().sdk;
+        const items: Array<{ uid: string; name: string; kind: 'file' | 'folder'; size: number | null; trashedAt: number | null }> = [];
+        // iterateTrashedNodes is deprecated but yields fully decrypted nodes (name, type, size) in one pass.
+        for await (const node of sdk.iterateTrashedNodes()) {
+            const kind = node.type === NodeType.Folder ? 'folder' : 'file';
+            items.push({
+                uid: node.uid,
+                name: nodeName(node.name),
+                kind,
+                size: kind === 'file' ? (node.activeRevision?.claimedSize ?? node.totalStorageSize ?? null) : null,
+                trashedAt: node.trashTime ? node.trashTime.getTime() : null,
+            });
+        }
+        items.sort((a, b) => (b.trashedAt ?? 0) - (a.trashedAt ?? 0) || a.name.localeCompare(b.name));
+        res.json({ items });
+    } catch (error) {
+        res.status(502).json({ error: (error as Error).message ?? 'Failed to list Drive trash' });
+    }
+});
+
+app.post('/api/drive/trash/restore', requireAuth, async (req, res) => {
+    const uid = (req.body as { uid?: string } | undefined)?.uid;
+    if (!uid) {
+        res.status(400).json({ error: 'uid is required' });
+        return;
+    }
+    try {
+        const sdk = authService.getSession().sdk;
+        for await (const result of sdk.restoreNodes([uid])) {
+            if (!result.ok) {
+                res.status(502).json({ error: (result as { error?: { message?: string } }).error?.message ?? 'Failed to restore item' });
+                return;
+            }
+        }
+        res.json({ ok: true });
+    } catch (error) {
+        res.status(502).json({ error: (error as Error).message ?? 'Failed to restore item' });
+    }
+});
+
+app.post('/api/drive/trash/delete', requireAuth, async (req, res) => {
+    const uid = (req.body as { uid?: string } | undefined)?.uid;
+    if (!uid) {
+        res.status(400).json({ error: 'uid is required' });
+        return;
+    }
+    try {
+        const sdk = authService.getSession().sdk;
+        for await (const result of sdk.deleteNodes([uid])) {
+            if (!result.ok) {
+                res.status(502).json({ error: (result as { error?: { message?: string } }).error?.message ?? 'Failed to delete item' });
+                return;
+            }
+        }
+        res.json({ ok: true });
+    } catch (error) {
+        res.status(502).json({ error: (error as Error).message ?? 'Failed to delete item' });
+    }
+});
+
+app.post('/api/drive/trash/clear', requireAuth, async (_req, res) => {
+    try {
+        await authService.getSession().sdk.emptyTrash();
+        res.json({ ok: true });
+    } catch (error) {
+        res.status(502).json({ error: (error as Error).message ?? 'Failed to empty trash' });
+    }
+});
+
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
     if (!authService.isAuthenticated()) {
         res.status(401).json({ error: 'Not authenticated' });

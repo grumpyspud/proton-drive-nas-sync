@@ -1,4 +1,4 @@
-import type { Conflict, DirListing, DuplicateGroup, ErrorLogEntry, ErrorLogStatus, IgnoredGroup, LocalVolume, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
+import type { Conflict, DirListing, DriveTrashItem, DuplicateGroup, ErrorLogEntry, ErrorLogStatus, IgnoredGroup, LocalVolume, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
 
 function getDeviceId(): string {
     try {
@@ -208,6 +208,22 @@ export function deleteTrashItem(id: string, ts: number, relPath: string): Promis
 
 export function clearTrash(id: string): Promise<{ ok: boolean }> {
     return request(`/api/pairs/${encodeURIComponent(id)}/trash/clear`, { method: 'POST' });
+}
+
+export function listDriveTrash(): Promise<{ items: DriveTrashItem[] }> {
+    return request('/api/drive/trash');
+}
+
+export function restoreDriveTrash(uid: string): Promise<{ ok: boolean }> {
+    return request('/api/drive/trash/restore', { method: 'POST', body: JSON.stringify({ uid }) });
+}
+
+export function deleteDriveTrash(uid: string): Promise<{ ok: boolean }> {
+    return request('/api/drive/trash/delete', { method: 'POST', body: JSON.stringify({ uid }) });
+}
+
+export function clearDriveTrash(): Promise<{ ok: boolean }> {
+    return request('/api/drive/trash/clear', { method: 'POST' });
 }
 
 export function getDuplicates(id: string, minBytes = 0): Promise<{ groups: DuplicateGroup[] }> {

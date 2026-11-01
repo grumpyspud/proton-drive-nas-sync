@@ -117,6 +117,14 @@ export interface TrashItem {
     mtimeMs: number;
 }
 
+export interface DriveTrashItem {
+    uid: string;
+    name: string;
+    kind: 'file' | 'folder';
+    size: number | null;
+    trashedAt: number | null;
+}
+
 export interface DuplicateFile {
     relPath: string;
     size: number;

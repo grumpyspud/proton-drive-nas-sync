@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getConflicts, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listPairs, listTrash, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updateSettings } from '../api';
-import type { DeletionHold, ErrorLogStatus, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
+import { cancelDeletion, clearDriveTrash, clearTrash, confirmDeletion, deleteDriveTrash, deleteTrashItem, getConflicts, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listDriveTrash, listPairs, listTrash, removePair, restoreDriveTrash, restoreTrashItem, setSyncPaused, startSync, stopSync, updateSettings } from '../api';
+import type { DeletionHold, DriveTrashItem, ErrorLogStatus, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { LogsModal } from './LogsModal';
@@ -35,6 +35,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [storage, setStorage] = useState<StorageInfo | null>(null);
     const [localVolumes, setLocalVolumes] = useState<LocalVolume[]>([]);
     const [trashPair, setTrashPair] = useState<Pair | null>(null);
+    const [driveTrashOpen, setDriveTrashOpen] = useState(false);
     const [paused, setPaused] = useState(false);
     const [showLogs, setShowLogs] = useState(false);
     const [overall, setOverall] = useState<OverallState | null>(null);
@@ -566,7 +567,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
 
                 <section className="col col-side">
                     {localVolumes.length > 0 && <LocalStorageCard volumes={localVolumes} />}
-                    {storage && <StorageCard storage={storage} />}
+                    {storage && <StorageCard storage={storage} onOpenTrash={() => setDriveTrashOpen(true)} />}
                     <div className="card">
                         <h2>Folder pairs</h2>
                         <ul className="pair-list">
@@ -620,6 +621,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
             <footer className="footer">Third-party application: not affiliated with, endorsed by, or supported by Proton AG.</footer>
 
             {trashPair && <TrashModal pair={trashPair} onClose={() => setTrashPair(null)} />}
+            {driveTrashOpen && <DriveTrashModal onClose={() => setDriveTrashOpen(false)} />}
             {showLogs && <LogsModal onClose={() => setShowLogs(false)} />}
             {showActivityLog && <ActivityLogModal items={items} totalItems={totalItems} onClose={() => setShowActivityLog(false)} />}
             {showErrorLog && <ErrorLogModal onClose={() => { setShowErrorLog(false); void loadErrorStatus(); }} />}
@@ -740,7 +742,7 @@ function LocalStorageCard({ volumes }: { volumes: LocalVolume[] }) {
     );
 }
 
-function StorageCard({ storage }: { storage: StorageInfo }) {
+function StorageCard({ storage, onOpenTrash }: { storage: StorageInfo; onOpenTrash: () => void }) {
     const max = storage.maxBytes;
     const pct = max > 0 ? Math.min(100, (storage.driveBytes / max) * 100) : 0;
     const showTotal = storage.usedBytes > 0 && storage.usedBytes !== storage.driveBytes;
@@ -757,7 +759,10 @@ function StorageCard({ storage }: { storage: StorageInfo }) {
 
     return (
         <div className="card">
-            <h2>Proton Drive Storage</h2>
+            <div className="card-head">
+                <h2>Proton Drive Storage</h2>
+                <button className="btn btn-ghost btn-sm" onClick={onOpenTrash}>Trash</button>
+            </div>
             <div className="storage-head">
                 <span className="storage-nums">
                     {formatBytes(storage.driveBytes)} <span className="muted">of</span> {formatBytes(storage.maxBytes)}
@@ -776,10 +781,164 @@ function StorageCard({ storage }: { storage: StorageInfo }) {
     );
 }
 
+function ConfirmModal({ title, message, confirmLabel, onConfirm, onClose }: {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => Promise<void>;
+    onClose: () => void;
+}) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    async function handleConfirm() {
+        setBusy(true);
+        setError(null);
+        try {
+            await onConfirm();
+            onClose();
+        } catch (err) {
+            setError((err as Error).message);
+            setBusy(false);
+        }
+    }
+
+    return (
+        <div className="modal-overlay" onClick={() => { if (!busy) onClose(); }}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-head">
+                    <h2>{title}</h2>
+                    <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close" disabled={busy}>
+                        ✕
+                    </button>
+                </div>
+                <p>{message}</p>
+                {error && <div className="alert">{error}</div>}
+                <div className="modal-actions">
+                    <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+                        Cancel
+                    </button>
+                    <button type="button" className="btn btn-danger" onClick={handleConfirm} disabled={busy}>
+                        {busy ? 'Working…' : confirmLabel}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function DriveTrashModal({ onClose }: { onClose: () => void }) {
+    const [items, setItems] = useState<DriveTrashItem[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [confirm, setConfirm] = useState<{ title: string; message: string; label: string; run: () => Promise<void> } | null>(null);
+
+    const reload = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            setItems((await listDriveTrash()).items);
+        } catch (err) {
+            setError((err as Error).message);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        void reload();
+    }, [reload]);
+
+    async function restore(it: DriveTrashItem) {
+        setError(null);
+        try {
+            await restoreDriveTrash(it.uid);
+            await reload();
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    function askDelete(it: DriveTrashItem) {
+        setConfirm({
+            title: 'Delete permanently?',
+            message: `Permanently delete "${it.name}" from Proton Drive? This cannot be undone.`,
+            label: 'Delete',
+            run: async () => {
+                await deleteDriveTrash(it.uid);
+                await reload();
+            },
+        });
+    }
+
+    function askEmpty() {
+        setConfirm({
+            title: 'Empty trash?',
+            message: 'Permanently delete every item in Proton Drive trash? This cannot be undone.',
+            label: 'Empty trash',
+            run: async () => {
+                await clearDriveTrash();
+                await reload();
+            },
+        });
+    }
+
+    return (
+        <>
+            <div className="modal-overlay" onClick={onClose}>
+                <div className="modal" onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-head">
+                        <h2>Proton Drive Trash</h2>
+                        <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">✕</button>
+                    </div>
+                    <p className="muted">Files and folders trashed in Proton Drive. Restore returns them to their original folder.</p>
+                    {error && <div className="alert">{error}</div>}
+                    {loading ? (
+                        <div className="muted">Loading…</div>
+                    ) : items.length === 0 ? (
+                        <div className="muted">Drive trash is empty.</div>
+                    ) : (
+                        <>
+                            <ul className="trash-list">
+                                {items.map((it) => (
+                                    <li key={it.uid} className="trash-item">
+                                        <div className="trash-info">
+                                            <div className="trash-name">{it.name}</div>
+                                            <div className="trash-meta">
+                                                {it.kind === 'folder' ? 'Folder' : it.size != null ? `${formatBytes(it.size)} · ` : ''}
+                                                {it.trashedAt ? `trashed ${new Date(it.trashedAt).toLocaleString()}` : ''}
+                                            </div>
+                                        </div>
+                                        <div className="trash-actions">
+                                            <button className="btn btn-primary btn-sm" onClick={() => restore(it)}>Restore</button>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => askDelete(it)}>Delete</button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                            <button className="btn btn-ghost btn-sm" onClick={askEmpty}>Empty trash</button>
+                        </>
+                    )}
+                </div>
+            </div>
+            {confirm && (
+                <ConfirmModal
+                    title={confirm.title}
+                    message={confirm.message}
+                    confirmLabel={confirm.label}
+                    onConfirm={confirm.run}
+                    onClose={() => setConfirm(null)}
+                />
+            )}
+        </>
+    );
+}
+
 function TrashModal({ pair, onClose }: { pair: Pair; onClose: () => void }) {
     const [items, setItems] = useState<TrashItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [confirmClear, setConfirmClear] = useState(false);
 
     const reload = useCallback(async () => {
         setLoading(true);
@@ -817,60 +976,76 @@ function TrashModal({ pair, onClose }: { pair: Pair; onClose: () => void }) {
         }
     }
 
-    async function clearAll() {
-        if (!window.confirm('Permanently delete all recycled files for this pair?')) return;
+    function clearAll() {
+        setConfirmClear(true);
+    }
+
+    async function doClearAll() {
         setError(null);
         try {
             await clearTrash(pair.id);
             await reload();
         } catch (err) {
             setError((err as Error).message);
+        } finally {
+            setConfirmClear(false);
         }
     }
 
     return (
-        <div className="modal-overlay" onClick={onClose}>
-            <div className="modal" onClick={(e) => e.stopPropagation()}>
-                <div className="modal-head">
-                    <h2>Trash: {pair.driveFolderName || 'My Files (root)'}</h2>
-                    <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
-                        ✕
-                    </button>
-                </div>
-                <p className="muted">Recycled files from {pair.localDir}</p>
-                {error && <div className="alert">{error}</div>}
-                {loading ? (
-                    <div className="muted">Loading…</div>
-                ) : items.length === 0 ? (
-                    <div className="muted">Trash is empty.</div>
-                ) : (
-                    <>
-                        <ul className="trash-list">
-                            {items.map((it) => (
-                                <li key={`${it.ts}/${it.relPath}`} className="trash-item">
-                                    <div className="trash-info">
-                                        <div className="trash-name">{it.relPath}</div>
-                                        <div className="trash-meta">
-                                            {formatBytes(it.size)} · recycled {new Date(it.ts).toLocaleString()}
-                                        </div>
-                                    </div>
-                                    <div className="trash-actions">
-                                        <button className="btn btn-primary btn-sm" onClick={() => restore(it)}>
-                                            Restore
-                                        </button>
-                                        <button className="btn btn-ghost btn-sm" onClick={() => remove(it)}>
-                                            Delete
-                                        </button>
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
-                        <button className="btn btn-ghost btn-sm" onClick={clearAll}>
-                            Clear all
+        <>
+            <div className="modal-overlay" onClick={onClose}>
+                <div className="modal" onClick={(e) => e.stopPropagation()}>
+                    <div className="modal-head">
+                        <h2>Trash: {pair.driveFolderName || 'My Files (root)'}</h2>
+                        <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
+                            ✕
                         </button>
-                    </>
-                )}
+                    </div>
+                    <p className="muted">Recycled files from {pair.localDir}</p>
+                    {error && <div className="alert">{error}</div>}
+                    {loading ? (
+                        <div className="muted">Loading…</div>
+                    ) : items.length === 0 ? (
+                        <div className="muted">Trash is empty.</div>
+                    ) : (
+                        <>
+                            <ul className="trash-list">
+                                {items.map((it) => (
+                                    <li key={`${it.ts}/${it.relPath}`} className="trash-item">
+                                        <div className="trash-info">
+                                            <div className="trash-name">{it.relPath}</div>
+                                            <div className="trash-meta">
+                                                {formatBytes(it.size)} · recycled {new Date(it.ts).toLocaleString()}
+                                            </div>
+                                        </div>
+                                        <div className="trash-actions">
+                                            <button className="btn btn-primary btn-sm" onClick={() => restore(it)}>
+                                                Restore
+                                            </button>
+                                            <button className="btn btn-ghost btn-sm" onClick={() => remove(it)}>
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                            <button className="btn btn-ghost btn-sm" onClick={clearAll}>
+                                Clear all
+                            </button>
+                        </>
+                    )}
+                </div>
             </div>
-        </div>
+            {confirmClear && (
+                <ConfirmModal
+                    title="Empty trash?"
+                    message="Permanently delete all recycled files for this pair? This cannot be undone."
+                    confirmLabel="Delete all"
+                    onConfirm={doClearAll}
+                    onClose={() => setConfirmClear(false)}
+                />
+            )}
+        </>
     );
 }
