@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getConflicts, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listPairs, listTrash, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updateSettings } from '../api';
 import type { DeletionHold, ErrorLogStatus, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
-import { formatBytes, formatDate, formatSpeed } from '../format';
+import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { LogsModal } from './LogsModal';
 import { ErrorLogModal } from './ErrorLogModal';
@@ -570,7 +570,6 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                         <h2>Folder pairs</h2>
                         <ul className="pair-list">
                             {pairs.map((p) => {
-                                const lastSyncLabel = p.lastSyncAt ? formatDate(p.lastSyncAt) : 'Never';
                                 return (
                                     <li key={p.id} className="pair">
                                         <div className="pair-main">
@@ -590,15 +589,6 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                                 <button className="btn btn-ghost btn-sm" onClick={() => onRemove(p.id)}>
                                                     Remove
                                                 </button>
-                                            </div>
-                                        </div>
-                                        <div className="pair-sync-info">
-                                            <div className="pair-sync-line">
-                                                <span className="pair-sync-label">Last sync:</span> {lastSyncLabel}
-                                            </div>
-                                            <div className="pair-sync-line">
-                                                <span className="pair-sync-label">Next sync:</span>{' '}
-                                                <span className="pair-sync-timer">live</span>
                                             </div>
                                         </div>
                                         <div className="pair-settings">
