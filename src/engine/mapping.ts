@@ -95,21 +95,20 @@ export async function mapEventsToTargets(
         }
 
         if (ev.type === 'deleted') {
-            // The node is gone: prefer sync.db (we know where it was).
+            // node_deleted is a PERMANENT delete, which Proton only ever emits for
+            // a node already in the trash. The trash itself arrived earlier as a
+            // node_updated (isTrashed:true) and already recycled the local copy and
+            // removed the sync.db row. So act here only if we STILL track the node
+            // (the trash + permanent delete landed in the same feed batch, before a
+            // reconcile could remove the row); otherwise it is a trashed node we
+            // have already handled (or never tracked) - ignore it, rather than
+            // treating it as unmappable, which would force a full walk every time a
+            // file is permanently deleted from (or the whole Drive trash is emptied
+            // via) the trash.
             const known = db.getNodeByDriveUid(ev.nodeUid);
             if (known) {
                 targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'deleted', driveUid: ev.nodeUid, kind: known.kind });
-                continue;
             }
-            // Never-synced deletion: resolve the surviving parent's pair.
-            if (ev.parentNodeUid) {
-                const parent = await resolveNode(ev.parentNodeUid);
-                if (parent) {
-                    targets.push({ pairId: parent.pairId, relPath: null, op: 'deleted', driveUid: ev.nodeUid, kind: null });
-                    continue;
-                }
-            }
-            unmappable.push(ev);
             continue;
         }
 
