@@ -11,7 +11,7 @@ import { ConflictsModal } from './ConflictsModal';
 import { CreatePairModal } from './CreatePairModal';
 import { ActivityLogModal } from './ActivityLogModal';
 import { SignOutModal } from './SignOutModal';
-import { SYNC_FREQUENCIES, frequencyLabel, nextSyncAtMs, pairInterval } from '../schedule';
+import { SYNC_FREQUENCIES, frequencyLabel, nextSyncAtMs, pairInterval, scheduleFromValue } from '../schedule';
 
 const MAX_LOG = 200;
 
@@ -591,7 +591,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                 const interval = pairInterval(p);
                                 const lastSyncLabel = p.lastSyncAt ? formatDate(p.lastSyncAt) : 'Never';
                                 const nextMs = nextSyncAtMs(p);
-                                const nextSyncLabel = nextMs === null ? 'Manual' : nextMs > now ? `~${formatDurationHMS(nextMs - now)}` : '~< 1 min';
+                                const nextSyncLabel = p.realTime ? 'live' : nextMs === null ? 'Manual' : nextMs > now ? `~${formatDurationHMS(nextMs - now)}` : '~< 1 min';
                                 return (
                                     <li key={p.id} className="pair">
                                         <div className="pair-main">
@@ -629,10 +629,10 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                             <Toggle
                                                 label="Auto-sync"
                                                 checked={interval !== null}
-                                                onChange={(v) => onUpdatePair(p.id, { realTime: false, autoSync: v, intervalSeconds: v ? interval ?? 3600 : interval ?? 0 })}
+                                                onChange={(v) => onUpdatePair(p.id, v ? scheduleFromValue(3600) : { realTime: false, autoSync: false, intervalSeconds: 0 })}
                                             />
                                             {interval !== null && (
-                                                <select className="select" value={interval} onChange={(e) => onUpdatePair(p.id, { realTime: false, autoSync: true, intervalSeconds: Number(e.target.value) })}>
+                                                <select className="select" value={interval} onChange={(e) => onUpdatePair(p.id, scheduleFromValue(Number(e.target.value)))}>
                                                     {SYNC_FREQUENCIES.map((f) => (
                                                         <option key={f.value} value={f.value}>
                                                             {f.label}

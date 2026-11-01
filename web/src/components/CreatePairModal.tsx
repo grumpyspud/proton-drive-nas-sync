@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { addPair } from '../api';
 import type { LocalVolume } from '../types';
 import { FolderBrowser } from './FolderBrowser';
-import { SYNC_FREQUENCIES } from '../schedule';
+import { SYNC_FREQUENCIES, scheduleFromValue } from '../schedule';
 
 function normalizeAbs(p: string): string {
     const stack: string[] = [];
@@ -53,11 +53,10 @@ export function CreatePairModal({ volumes, onCreated, onClose }: Props) {
         setBusy(true);
         setError(null);
         try {
-            await addPair(localDir.trim(), folder.trim(), {
-                realTime: false,
-                autoSync,
-                intervalSeconds: autoSync ? intervalSeconds : 0,
-            });
+            const schedule = autoSync
+                ? scheduleFromValue(intervalSeconds)
+                : { realTime: false, autoSync: false, intervalSeconds: 0 };
+            await addPair(localDir.trim(), folder.trim(), schedule);
             await onCreated();
             onClose();
         } catch (err) {
