@@ -1,5 +1,6 @@
 import type { Pair, SyncDB, SyncNode } from '../state/syncDb';
 import { walkLocalTree, type LocalEntry } from './walk';
+import { logger } from '../logger';
 
 /** The exact set of local changes vs the last-synced state in sync.db. */
 export interface LocalDiff {
@@ -28,9 +29,12 @@ export function localDiffEmpty(d: LocalDiff): boolean {
  * surgically instead of full-walking the pair.
  */
 export async function diffLocal(db: SyncDB, pair: Pair): Promise<LocalDiff> {
+    const t0 = Date.now();
     const stored = await db.allNodesAsync(pair.id);
+    const t1 = Date.now();
     const storedByRel = new Map(stored.map((n) => [n.relPath, n]));
     const local = await walkLocalTree(pair.localDir);
+    const t2 = Date.now();
 
     const added: LocalEntry[] = [];
     const modified: LocalEntry[] = [];
@@ -50,6 +54,11 @@ export async function diffLocal(db: SyncDB, pair: Pair): Promise<LocalDiff> {
     for (const rel of storedByRel.keys()) {
         if (!localByRel.has(rel)) removed.push(storedByRel.get(rel)!);
     }
+
+    const t3 = Date.now();
+    logger.info(
+        `stat-scan ${pair.id}: db=${t1 - t0}ms walk=${t2 - t1}ms diff=${t3 - t2}ms (${stored.length} stored, ${local.length} local)`
+    );
 
     return { added, modified, removed };
 }
