@@ -33,9 +33,10 @@ export interface MappingResult {
  * resolved by walking its parent chain up to the pair root whose driveFolderUid
  * appears in it. `getNode` calls are mostly cache hits.
  *
- * Move/rename: an `updated` node with a new parent is mapped to BOTH its old
- * pair (from sync.db) and its new pair (from ancestry), since the old pair lost
- * a file and the new pair gained one.
+ * Move/rename: an `updated` node whose resolved location differs from its stored
+ * one is a move. Within one pair it is a `moved` target (cheap metadata rename,
+ * file or folder); across pairs it is a delete at the old relPath + a create at
+ * the new relPath.
  *
  * Any event that cannot be resolved goes to `unmappable`; the caller must treat
  * that as "full-walk every pair" rather than risk missing a change.
@@ -132,18 +133,12 @@ export async function mapEventsToTargets(
         if (known && resolved) {
             if (known.pairId === resolved.pairId && known.relPath === resolved.relPath) {
                 targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'updated', driveUid: ev.nodeUid, kind: known.kind });
-            } else if (known.pairId === resolved.pairId && known.kind === 'file') {
-                // Within-pair file move/rename: a cheap rename instead of a
-                // delete + re-download.
-                targets.push({ pairId: known.pairId, relPath: resolved.relPath, oldRelPath: known.relPath, op: 'moved', driveUid: ev.nodeUid, kind: 'file' });
-            } else if (known.pairId === resolved.pairId && known.kind === 'folder') {
-                // Within-pair folder move/rename: the delta cannot do a cheap
-                // subtree move yet (deferred). Force a full walk, which handles it
-                // coherently (recycle the old subtree + mkdir new + re-download).
-                // A surgical delete+create here would orphan the children (they
-                // emit no events of their own on a folder move) and later trash
-                // them - data loss.
-                unmappable.push(ev);
+            } else if (known.pairId === resolved.pairId) {
+                // Within-pair move/rename (file OR folder): a cheap metadata move.
+                // A folder move renames the local subtree + rewrites the sync.db
+                // relPath prefix (see resolveMoves); the descendants emit no events
+                // of their own, so delete+create would orphan them.
+                targets.push({ pairId: known.pairId, relPath: resolved.relPath, oldRelPath: known.relPath, op: 'moved', driveUid: ev.nodeUid, kind: known.kind });
             } else {
                 // Cross-pair move: delete old + create new.
                 targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'deleted', driveUid: ev.nodeUid, kind: known.kind });

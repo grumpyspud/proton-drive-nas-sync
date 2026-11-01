@@ -15,7 +15,36 @@ export interface ResolvedMoves {
 }
 
 type DriveMoveOutcome = 'moved' | 'fallback' | 'fullwalk';
+type FolderMoveOutcome = 'moved' | 'fullwalk';
 type LocalMoveOutcome = 'moved' | 'fallback';
+
+/** A relPath prefix rewrite implied by a folder move: `oldPrefix` -> `newPrefix`. */
+interface PrefixRewrite {
+    oldPrefix: string;
+    newPrefix: string;
+}
+
+/** Rewrite a relPath that lives under a moved folder, else return it unchanged. */
+function rewriteRelPath(relPath: string | null, rewrites: PrefixRewrite[]): string | null {
+    if (relPath == null) return relPath;
+    for (const r of rewrites) {
+        if (relPath === r.oldPrefix) return r.newPrefix;
+        if (relPath.startsWith(r.oldPrefix + '/')) return r.newPrefix + relPath.slice(r.oldPrefix.length);
+    }
+    return relPath;
+}
+
+/** Rewrite a target's relPath/oldRelPath after folder moves. A `moved` whose old
+ *  and new paths collapsed to the same path is really an in-place update (the
+ *  node only "moved" because its ancestor folder was renamed). */
+function rewriteTarget(t: SyncTarget, rewrites: PrefixRewrite[]): SyncTarget {
+    const relPath = rewriteRelPath(t.relPath, rewrites);
+    const oldRelPath = t.oldRelPath != null ? rewriteRelPath(t.oldRelPath, rewrites) : t.oldRelPath;
+    if (t.op === 'moved' && relPath != null && oldRelPath != null && relPath === oldRelPath) {
+        return { ...t, relPath, oldRelPath: null, op: 'updated' };
+    }
+    return { ...t, relPath, oldRelPath };
+}
 
 /**
  * Resolve moves/renames as cheap metadata operations before the general
@@ -23,34 +52,54 @@ type LocalMoveOutcome = 'moved' | 'fallback';
  * update instead of a delete + full re-transfer.
  *
  * Drive-side moves arrive as `moved` targets (the event mapper detected a
- * within-pair file move); the local file is renamed to match. Local-side moves
- * are a `removed` + `added` pair with identical content (matched by size+mtime
- * and verified by SHA-1); the Drive node is renamed/moved to match.
+ * within-pair file or folder move). A file move renames the local file; a folder
+ * move renames the local subtree and rewrites the sync.db relPath prefix, then
+ * re-points any sibling targets that live under the moved folder. Local-side
+ * moves are a `removed` + `added` pair with identical content (matched by
+ * size+mtime and verified by SHA-1); the Drive node is renamed/moved to match.
  *
  * Returns null when a Drive-side move cannot be resolved surgically (its
- * `getNode` failed), signalling the caller to fall back to the full walk.
- * Any move that cannot be applied cleanly is left in the result so the normal
- * delete + create/upload path handles it.
+ * `getNode` failed, or a folder move hit an occupied destination), signalling the
+ * caller to fall back to the full walk. Any move that cannot be applied cleanly
+ * is left in the result so the normal delete + create/upload path handles it.
  */
 export async function resolveMoves(ctx: ReconcileContext, targets: SyncTarget[], localDiff: LocalDiff): Promise<ResolvedMoves | null> {
-    const remainingTargets: SyncTarget[] = [];
-
-    // 1. Drive-side moves (event-driven, unambiguous).
+    // 1. Drive-side folder moves first: rename the local subtree + rewrite the
+    //    sync.db relPath prefix, recording the rewrites so sibling targets (a
+    //    file created/deleted/edited under the moved folder in the same feed
+    //    batch) are re-pointed at the new path.
+    const rewrites: PrefixRewrite[] = [];
+    const afterFolders: SyncTarget[] = [];
     for (const t of targets) {
+        if (t.op === 'moved' && t.kind === 'folder' && t.oldRelPath != null && t.relPath != null) {
+            const outcome = await applyDriveFolderMove(ctx, t);
+            if (outcome === 'fullwalk') return null;
+            if (outcome === 'moved') rewrites.push({ oldPrefix: t.oldRelPath, newPrefix: t.relPath });
+        } else {
+            afterFolders.push(t);
+        }
+    }
+
+    // 2. Re-point sibling targets that live under the moved folders.
+    const rewritten = afterFolders.map((t) => rewriteTarget(t, rewrites));
+
+    // 3. Drive-side file moves (event-driven, unambiguous).
+    const afterFiles: SyncTarget[] = [];
+    for (const t of rewritten) {
         if (t.op !== 'moved' || t.oldRelPath == null || t.relPath == null) {
-            remainingTargets.push(t);
+            afterFiles.push(t);
             continue;
         }
         const outcome = await applyDriveMove(ctx, t);
         if (outcome === 'fullwalk') return null;
         if (outcome === 'fallback') {
-            remainingTargets.push({ ...t, op: 'deleted', relPath: t.oldRelPath });
-            remainingTargets.push({ ...t, op: 'created', relPath: t.relPath });
+            afterFiles.push({ ...t, op: 'deleted', relPath: t.oldRelPath, oldRelPath: null });
+            afterFiles.push({ ...t, op: 'created', relPath: t.relPath, oldRelPath: null });
         }
         // 'moved': consumed.
     }
 
-    // 2. Local-side moves: match a removed node to an added entry with the same
+    // 4. Local-side moves: match a removed node to an added entry with the same
     //    size + mtime, then verify content by SHA-1 before renaming on Drive.
     const consumedRemoved = new Set<number>();
     const consumedAdded = new Set<number>();
@@ -74,12 +123,48 @@ export async function resolveMoves(ctx: ReconcileContext, targets: SyncTarget[],
     for (const [j, a] of localDiff.added.entries()) if (!consumedAdded.has(j)) addedRemaining.push(a);
 
     return {
-        targets: remainingTargets,
+        targets: afterFiles,
         localDiff: { added: addedRemaining, modified: localDiff.modified, removed: removedRemaining },
     };
 }
 
-/** Drive-side move: rename the (unchanged) local file oldRel -> newRel. */
+/** Drive-side folder move/rename: rename the local folder (moving its whole
+ *  subtree) and rewrite the relPath prefix in sync.db. The node's driveUid and
+ *  every descendant's driveUid are unchanged - only the path prefix changed - so
+ *  this is a metadata op, not a transfer. */
+async function applyDriveFolderMove(ctx: ReconcileContext, t: SyncTarget): Promise<FolderMoveOutcome> {
+    const oldRel = t.oldRelPath!;
+    const newRel = t.relPath!;
+
+    const localOld = await statLocalEntry(ctx.localDir, oldRel);
+    if (localOld?.kind !== 'folder') return 'fullwalk';
+
+    // Destination must be free (local and DB), and a cross-parent move needs its
+    // new parent to already exist locally (otherwise we would move into an
+    // un-synced parent).
+    const localNew = await statLocalEntry(ctx.localDir, newRel);
+    if (localNew != null) return 'fullwalk';
+    if (ctx.db.getNode(ctx.pairId, newRel) != null) return 'fullwalk';
+    const newParent = path.posix.dirname(newRel);
+    if (newParent !== path.posix.dirname(oldRel)) {
+        const parentEntry = newParent === '.' ? { kind: 'folder' as const } : await statLocalEntry(ctx.localDir, newParent);
+        if (parentEntry?.kind !== 'folder') return 'fullwalk';
+    }
+
+    try {
+        await mkdir(path.dirname(path.join(ctx.localDir, newRel)), { recursive: true });
+        await rename(path.join(ctx.localDir, oldRel), path.join(ctx.localDir, newRel));
+        ctx.db.renameSubtree(ctx.pairId, oldRel, newRel);
+    } catch {
+        return 'fullwalk';
+    }
+
+    ctx.result.moved++;
+    ctx.onProgress?.({ type: 'item', action: 'move', relPath: newRel, message: `folder moved from ${oldRel}` });
+    return 'moved';
+}
+
+/** Drive-side file move: rename the (unchanged) local file oldRel -> newRel. */
 async function applyDriveMove(ctx: ReconcileContext, t: SyncTarget): Promise<DriveMoveOutcome> {
     const oldRel = t.oldRelPath!;
     const newRel = t.relPath!;

@@ -279,6 +279,24 @@ export class SyncDB {
         return row.n;
     }
 
+    /** Rewrite a folder's relPath prefix for the folder itself and every
+     *  descendant node, so a folder rename is a single atomic UPDATE instead of
+     *  a delete + re-transfer. The drive_uid of every row is unchanged (a rename
+     *  does not change a node's uid), only rel_path moves. Returns rows updated. */
+    renameSubtree(pairId: string, oldRelPath: string, newRelPath: string): number {
+        // Escape LIKE wildcards in the prefix so names with `_` or `%` match
+        // literally; descendants are matched by the `/<rest>` tail after the prefix.
+        const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => '\\' + c);
+        return Number(
+            this.db
+                .prepare(
+                    `UPDATE nodes SET rel_path = ? || substr(rel_path, ?)
+                     WHERE pair_id = ? AND (rel_path = ? OR rel_path LIKE ? ESCAPE '\\')`,
+                )
+                .run(newRelPath, oldRelPath.length + 1, pairId, oldRelPath, `${escapeLike(oldRelPath)}/%`).changes,
+        );
+    }
+
     upsertNode(node: SyncNode): void {
         this.db
             .prepare(
