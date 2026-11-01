@@ -1,13 +1,24 @@
 import { DriveEventType } from '@protontech/drive-sdk';
 import type { ProtonDriveClient } from '@protontech/drive-sdk';
 
+/** A node-level change from the event feed (created/updated/deleted). */
+export interface NodeEventInfo {
+    type: 'created' | 'updated' | 'deleted';
+    nodeUid: string;
+    parentNodeUid?: string;
+    isTrashed: boolean;
+    isShared: boolean;
+}
+
 export interface EventPollResult {
-    /** True when any node_created / node_updated / node_deleted event was seen. */
-    driveChanged: boolean;
+    /** Node-level events since lastEventId, in feed order. */
+    nodeEvents: NodeEventInfo[];
     /** A tree_refresh event: something changed but the feed cannot say what. */
     treeRefresh: boolean;
     /** A fast_forward event: we fell too far behind (or started fresh). */
     fastForward: boolean;
+    /** A tree_remove event: the volume is gone. */
+    treeRemove: boolean;
     /** The highest event ID processed, or the input lastEventId when none. */
     lastEventId: string | null;
 }
@@ -29,17 +40,22 @@ export async function pollEvents(
     treeEventScopeId: string,
     lastEventId: string | null,
 ): Promise<EventPollResult> {
-    let driveChanged = false;
+    const nodeEvents: NodeEventInfo[] = [];
     let treeRefresh = false;
     let fastForward = false;
+    let treeRemove = false;
     let latest = lastEventId;
 
     for await (const ev of sdk.iterateEvents(treeEventScopeId, lastEventId ?? undefined)) {
         switch (ev.type) {
             case DriveEventType.NodeCreated:
+                nodeEvents.push({ type: 'created', nodeUid: ev.nodeUid, parentNodeUid: ev.parentNodeUid, isTrashed: ev.isTrashed, isShared: ev.isShared });
+                break;
             case DriveEventType.NodeUpdated:
+                nodeEvents.push({ type: 'updated', nodeUid: ev.nodeUid, parentNodeUid: ev.parentNodeUid, isTrashed: ev.isTrashed, isShared: ev.isShared });
+                break;
             case DriveEventType.NodeDeleted:
-                driveChanged = true;
+                nodeEvents.push({ type: 'deleted', nodeUid: ev.nodeUid, parentNodeUid: ev.parentNodeUid, isTrashed: false, isShared: false });
                 break;
             case DriveEventType.TreeRefresh:
                 treeRefresh = true;
@@ -48,13 +64,14 @@ export async function pollEvents(
                 fastForward = true;
                 break;
             case DriveEventType.TreeRemove:
+                treeRemove = true;
+                break;
             case DriveEventType.SharedWithMeUpdated:
-                // tree_remove: the volume is gone; surfaced via the full-walk/error
-                // path. shared_with_me_updated: we do not sync shared folders.
+                // We do not sync shared folders.
                 break;
         }
         if (ev.eventId !== 'none') latest = ev.eventId;
     }
 
-    return { driveChanged, treeRefresh, fastForward, lastEventId: latest };
+    return { nodeEvents, treeRefresh, fastForward, treeRemove, lastEventId: latest };
 }

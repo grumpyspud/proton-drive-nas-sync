@@ -40,3 +40,12 @@ const REALTIME_INTERVAL_RAW = Number.parseInt(process.env.PDN_REALTIME_INTERVAL 
 export const REALTIME_INTERVAL_SECONDS = Number.isFinite(REALTIME_INTERVAL_RAW)
     ? Math.min(60, Math.max(10, REALTIME_INTERVAL_RAW))
     : 30;
+
+/**
+ * Feature flag for the event-driven delta sync (Phase 2+3). When 'off', the
+ * scheduler falls back to today's behavior: any Drive change full-walks every
+ * real-time pair. Default ON: map events to their pairs and full-walk only the
+ * affected pairs (targeted per-node ops come in a later milestone). `off` is
+ * the instant-rollback switch.
+ */
+export const DELTA_ENABLED = (process.env.PDN_DELTA ?? 'on').trim().toLowerCase() !== 'off';

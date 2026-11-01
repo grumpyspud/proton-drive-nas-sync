@@ -7,7 +7,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configDir, loadMasterKey } from '../crypto/keySource';
-import { CACHE_DIR, REALTIME_INTERVAL_SECONDS } from '../config';
+import { CACHE_DIR, DELTA_ENABLED, REALTIME_INTERVAL_SECONDS } from '../config';
 import { listLocalDir, mkdirLocal } from '../fs/browse';
 import { resolveTls, type TlsConfig } from './tls';
 import { findFolder, findOrCreateFolderPath } from '../fs/folders';
@@ -17,6 +17,7 @@ import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce, SyncAbortedError, DEFAULT_TRANSFER_CONCURRENCY, MAX_TRANSFER_CONCURRENCY } from '../engine/sync';
 import { walkLocalTree } from '../engine/walk';
 import { pollEvents } from '../proton/events';
+import { mapEventsToTargets } from '../engine/mapping';
 import { DeletionTripwireError } from '../engine/safety';
 import { recycleDuplicates, scanDuplicates } from '../engine/duplicates';
 import { resolveConflictKeep } from '../engine/conflicts';
@@ -1342,10 +1343,12 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 //      so the full walks below re-fetch them - correct for every cache backend),
 //   2. run every auto-sync pair whose interval elapsed via its ORIGINAL full
 //      walk (never gated on the feed - see schedulerTick),
-//   3. check-then-sync each real-time pair: sync on a feed change or a local
-//      stat-scan difference, otherwise skip to the next tick.
-// The full three-way walk remains the workhorse; the feed only decides WHEN a
-// real-time pair runs it and keeps the cache fresh for everyone.
+//   3. check-then-sync each real-time pair: sync when a mapped Drive event
+//      points at it, when the feed is opaque (tree_refresh/fast_forward/
+//      tree_remove -> full walk), or when the local stat-scan shows a diff;
+//      otherwise skip to the next tick.
+// The full three-way walk remains the workhorse; the delta mapping (M1) only
+// narrows WHICH real-time pair runs it, and keeps the cache fresh for everyone.
 
 function lastEventIdKey(treeEventScopeId: string): string {
     return `lastEventId:${treeEventScopeId}`;
@@ -1409,10 +1412,11 @@ async function schedulerTick(): Promise<void> {
         // Poll the event feed once (all pairs share the one "My Files" scope).
         // Its job here is the stale-marking side effect: changed nodes get marked
         // stale so the full walks below re-fetch them from the API instead of
-        // serving a stale cache entry. For real-time pairs it also supplies the
-        // driveChanged / tree_refresh / fast_forward dirty signal. We do NOT
+        // serving a stale cache entry. It also supplies the Drive-side change
+        // signal that the delta mapping turns into a per-pair decision. We do NOT
         // persist the ID here - only after a clean sync.
-        let globalDirty = false;
+        let forceFullWalk = false;
+        let driveAffected = new Set<string>();
         let scope: string | null = null;
         let savedId: string | null = null;
         let processedId: string | null = null;
@@ -1423,7 +1427,22 @@ async function schedulerTick(): Promise<void> {
             savedId = db.getSetting(lastEventIdKey(scope));
             const res = await pollEvents(sdk, scope, savedId);
             processedId = res.lastEventId;
-            globalDirty = res.driveChanged || res.treeRefresh || res.fastForward;
+            forceFullWalk = res.treeRefresh || res.fastForward || res.treeRemove;
+
+            if (DELTA_ENABLED && !forceFullWalk && res.nodeEvents.length > 0) {
+                const mapped = await mapEventsToTargets(sdk, res.nodeEvents, all, db);
+                if (mapped.unmappable.length > 0) {
+                    // Could not resolve every event to a pair - full-walk every
+                    // real-time pair rather than risk missing a change.
+                    forceFullWalk = true;
+                    logger.info(`delta: ${mapped.unmappable.length}/${res.nodeEvents.length} event(s) unmappable -> full walk`);
+                } else {
+                    for (const t of mapped.targets) driveAffected.add(t.pairId);
+                    logger.info(`delta: ${res.nodeEvents.length} event(s) -> pairs [${[...driveAffected].join(', ') || 'none'}]`);
+                }
+            } else if (forceFullWalk && res.nodeEvents.length > 0) {
+                logger.info('delta: feed opaque (refresh/fast-forward/remove) -> full walk');
+            }
         } catch (error) {
             logger.warn(`Event feed poll failed: ${(error as Error).message ?? error}`);
         }
@@ -1437,11 +1456,11 @@ async function schedulerTick(): Promise<void> {
         // feed marked stale.
         const toSync = new Set<string>(autoDue.map((p) => p.id));
 
-        // Real-time pairs ride the check-then-sync loop. Phase 1 does not map
-        // Drive events to pairs, so any Drive change syncs every real-time pair;
-        // only when the Drive side is clean do we consult the local scan.
+        // Real-time pairs: sync when the Drive side is opaque (full walk), a
+        // mapped event points at this pair, or the local stat-scan shows a
+        // change. Clean pairs are skipped to the next tick.
         for (const p of rtPairs) {
-            if (globalDirty) {
+            if (forceFullWalk || driveAffected.has(p.id)) {
                 toSync.add(p.id);
                 continue;
             }

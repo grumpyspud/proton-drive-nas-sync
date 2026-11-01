@@ -210,6 +210,8 @@ export class SyncDB {
                 value TEXT NOT NULL
             );
         `);
+        // Fast lookup of a node by its Drive uid (event -> pair mapping).
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_nodes_drive_uid ON nodes(drive_uid)');
         this.migrate();
     }
 
@@ -313,6 +315,12 @@ export class SyncDB {
     allNodes(pairId: string): SyncNode[] {
         const rows = this.db.prepare('SELECT * FROM nodes WHERE pair_id = ? ORDER BY rel_path').all(pairId) as unknown as NodeRow[];
         return rows.map(toNode);
+    }
+
+    /** First node across all pairs whose Drive uid matches (event -> pair lookup). */
+    getNodeByDriveUid(driveUid: string): SyncNode | undefined {
+        const row = this.db.prepare('SELECT * FROM nodes WHERE drive_uid = ? LIMIT 1').get(driveUid) as unknown as NodeRow | undefined;
+        return row ? toNode(row) : undefined;
     }
 
     /** Async variant of allNodes: streams the pair's rows in batches and yields
