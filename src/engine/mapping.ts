@@ -81,6 +81,18 @@ export async function mapEventsToTargets(
     }
 
     for (const ev of events) {
+        // A trashed node is gone from the active tree, whether the feed reports
+        // it as node_updated (isTrashed) or node_deleted. Treat it as a deletion:
+        // if we still track it, trash the local copy; if we already removed it
+        // (our own trash echo), skip so it is not resurrected as a "created".
+        if (ev.isTrashed) {
+            const known = db.getNodeByDriveUid(ev.nodeUid);
+            if (known) {
+                targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'deleted', driveUid: ev.nodeUid, kind: known.kind });
+            }
+            continue;
+        }
+
         if (ev.type === 'deleted') {
             // The node is gone: prefer sync.db (we know where it was).
             const known = db.getNodeByDriveUid(ev.nodeUid);
