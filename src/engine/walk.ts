@@ -129,6 +129,19 @@ export async function walkLocalTree(root: string, options: WalkLocalOptions = {}
     return entries;
 }
 
+/** Stat a single relPath within a local root; null when absent or not a file/folder. */
+export async function statLocalEntry(root: string, relPath: string): Promise<LocalEntry | null> {
+    const abs = path.join(root, relPath);
+    try {
+        const st = await stat(abs);
+        if (st.isDirectory()) return { relPath, absPath: abs, kind: 'folder', size: st.size, mtimeMs: st.mtimeMs };
+        if (st.isFile()) return { relPath, absPath: abs, kind: 'file', size: st.size, mtimeMs: st.mtimeMs };
+        return null;
+    } catch {
+        return null;
+    }
+}
+
 export interface WalkDriveOptions {
     /** Invoked for each `*.pdn-part` file (already excluded from results). */
     onPartial?: (relPath: string, uid: string) => void | Promise<void>;

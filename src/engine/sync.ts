@@ -4,13 +4,10 @@ import type { SyncDB } from '../state/syncDb';
 import type { ProgressHandler } from './progress';
 import { assertSourceAvailable } from './safety';
 import { drain } from './util';
-import { driveSize, walkDriveTree, walkLocalTree } from './walk';
+import { walkDriveTree, walkLocalTree } from './walk';
 import {
     ReconcileContext,
-    reconcileFile,
-    reconcileFolder,
-    runDeletionBarrier,
-    SyncAbortedError,
+    runReconcile,
     DEFAULT_TRANSFER_CONCURRENCY,
     MAX_TRANSFER_CONCURRENCY,
 } from './reconcile';
@@ -145,103 +142,10 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
     // Files with an unresolved conflict are frozen this cycle (skipped).
     for (const c of db.listConflicts(pairId)) ctx.pendingConflictRelPaths.add(c.relPath);
 
-    // ---- Folders (create both ways; defer deletions as a unit) ----
-    const folderRelPaths = new Set<string>();
-    for (const e of local) if (e.kind === 'folder') folderRelPaths.add(e.relPath);
-    for (const e of drive) if (e.kind === 'folder') folderRelPaths.add(e.relPath);
-    for (const n of stored) if (n.kind === 'folder') folderRelPaths.add(n.relPath);
-
-    const sortedFolders = [...folderRelPaths]
-        .map((p) => ({ p, depth: p.split('/').length }))
-        .sort((a, b) => a.depth - b.depth)
-        .map((x) => x.p);
-    let folderI = 0;
-    for (const relPath of sortedFolders) {
-        ctx.checkAbort();
-        if (++folderI % 500 === 0) await new Promise<void>((r) => setImmediate(r));
-        await reconcileFolder(ctx, relPath);
-    }
-
-    // ---- Files ----
-    const fileRelPaths = new Set<string>();
-    for (const e of local) if (e.kind === 'file') fileRelPaths.add(e.relPath);
-    for (const e of drive) if (e.kind === 'file') fileRelPaths.add(e.relPath);
-    for (const n of stored) if (n.kind === 'file') fileRelPaths.add(n.relPath);
-
-    // ---- Plan pass: count every file the reconcile will PROCESS and estimate
-    //      the DATA that will move (drives the overall bar readouts). Cheap
-    //      signals only (no hashing). ----
-    let planI = 0;
-    for (const relPath of fileRelPaths) {
-        if (++planI % 2000 === 0) await new Promise<void>((r) => setImmediate(r));
-        if (ctx.isUnderDeletedFolder(relPath)) continue;
-        const L = ctx.localByRel.get(relPath);
-        const D = ctx.driveByRel.get(relPath);
-        const S = ctx.storedByRel.get(relPath);
-        const inLocal = !!L;
-        const inDrive = !!D;
-        const inDb = !!S;
-        const dSize = driveSize(D?.node);
-        let bytes = 0;
-
-        if (inLocal && !inDrive && !inDb) {
-            bytes = L!.size;
-        } else if (!inLocal && inDrive && !inDb) {
-            bytes = dSize;
-        } else if (inLocal && inDrive && !inDb) {
-            bytes = L!.size + dSize; // assume conflict
-        } else if (inLocal && inDrive) {
-            const localChanged = S!.localSha1 != null && (S!.localSize !== L!.size || S!.localMtime !== L!.mtimeMs);
-            const driveChanged = S!.driveFingerprint != null && D!.fingerprint !== S!.driveFingerprint;
-            if (localChanged && !driveChanged) bytes = L!.size;
-            else if (!localChanged && driveChanged) bytes = dSize;
-            else if (localChanged && driveChanged) bytes = L!.size + dSize;
-        } else if (inLocal && !inDrive) {
-            const localChanged = S!.localSha1 != null && (S!.localSize !== L!.size || S!.localMtime !== L!.mtimeMs);
-            if (localChanged) bytes = L!.size;
-        } else if (!inLocal && inDrive) {
-            const driveChanged = S!.driveFingerprint != null && D!.fingerprint !== S!.driveFingerprint;
-            if (driveChanged) bytes = dSize;
-        }
-
-        ctx.totalFiles++;
-        ctx.totalBytes += bytes;
-    }
-    onProgress?.({ type: 'sync-plan', totalBytes: ctx.totalBytes, totalFiles: ctx.totalFiles });
-
-    // ---- Transfer phase: bounded-concurrency reconcile over the file set ----
+    // Drive the shared per-node reconcile (folders parent-first, plan, transfer,
+    // deletion barrier) over the fully-populated context.
     const transferConcurrency = Math.min(MAX_TRANSFER_CONCURRENCY, Math.max(1, Math.floor(options.transferConcurrency ?? DEFAULT_TRANSFER_CONCURRENCY)));
-    {
-        const queue = [...fileRelPaths];
-        let abortError: Error | null = null;
-        const workers = Array.from({ length: Math.min(transferConcurrency, queue.length) }, async () => {
-            let workerI = 0;
-            while (true) {
-                if (abortError || shouldAbort?.()) {
-                    abortError ??= new SyncAbortedError();
-                    return;
-                }
-                const relPath = queue.shift();
-                if (relPath === undefined) return;
-                try {
-                    await reconcileFile(ctx, relPath);
-                } catch (err) {
-                    if (err instanceof SyncAbortedError) {
-                        abortError = err;
-                        return;
-                    }
-                    throw err;
-                }
-                // Yield a real macrotask every N files so the healthcheck stays responsive.
-                if (++workerI % 50 === 0) await new Promise<void>((r) => setImmediate(r));
-            }
-        });
-        await Promise.all(workers);
-        if (abortError) throw abortError;
-    }
-
-    // ---- Deletion barrier: tripwire over ALL deletions, then execute (soft) ----
-    await runDeletionBarrier(ctx);
+    await runReconcile(ctx, transferConcurrency);
 
     return ctx.result;
 }

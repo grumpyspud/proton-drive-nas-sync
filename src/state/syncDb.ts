@@ -265,6 +265,12 @@ export class SyncDB {
         return row ? toNode(row) : undefined;
     }
 
+    /** Total tracked node count for a pair (deletion-tripwire denominator). */
+    countNodes(pairId: string): number {
+        const row = this.db.prepare('SELECT COUNT(*) AS n FROM nodes WHERE pair_id = ?').get(pairId) as unknown as { n: number };
+        return row.n;
+    }
+
     upsertNode(node: SyncNode): void {
         this.db
             .prepare(

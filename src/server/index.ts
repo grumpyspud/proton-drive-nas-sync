@@ -15,9 +15,10 @@ import { nodeName } from '../fs/files';
 import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
 import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce, SyncAbortedError, DEFAULT_TRANSFER_CONCURRENCY, MAX_TRANSFER_CONCURRENCY } from '../engine/sync';
-import { diffLocal, localDiffEmpty } from '../engine/localDiff';
+import { syncDelta } from '../engine/delta';
+import { diffLocal, localDiffEmpty, type LocalDiff } from '../engine/localDiff';
 import { pollEvents } from '../proton/events';
-import { mapEventsToTargets } from '../engine/mapping';
+import { mapEventsToTargets, type SyncTarget } from '../engine/mapping';
 import { DeletionTripwireError } from '../engine/safety';
 import { recycleDuplicates, scanDuplicates } from '../engine/duplicates';
 import { resolveConflictKeep } from '../engine/conflicts';
@@ -138,7 +139,13 @@ interface PendingDeletion {
 }
 let pendingDeletion: PendingDeletion | null = null;
 
-async function runSync(pairId: string, allowDeletions = false): Promise<boolean> {
+/** Per-pair delta inputs assembled by the scheduler (Drive targets + local diff). */
+interface DeltaInput {
+    targets: SyncTarget[];
+    localDiff: LocalDiff;
+}
+
+async function runSync(pairId: string, allowDeletions = false, delta: DeltaInput | null = null): Promise<boolean> {
     if (syncing || paused) return false;
     syncing = true;
     syncingPairId = pairId;
@@ -156,7 +163,7 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
         db.upsertPair({ ...pair, driveFolderUid });
 
         const onProgress: ProgressHandler = broadcast;
-        const summary = await syncOnce({
+        const common = {
             sdk: session.sdk,
             pairId,
             localDir: pair.localDir,
@@ -168,7 +175,12 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
             progressMinBytes: PROGRESS_MIN_BYTES,
             transferConcurrency: getTransferConcurrency(db),
             allowDeletions,
-        });
+        };
+        // Targeted delta first; fall back to the full walk when it can't resolve
+        // every Drive target surgically (or no delta was supplied, e.g. manual sync).
+        const summary = delta
+            ? ((await syncDelta({ ...common, targets: delta.targets, localDiff: delta.localDiff })) ?? (await syncOnce(common)))
+            : await syncOnce(common);
         db.markSynced(pairId);
         broadcast({ type: 'sync-complete', pairId, summary });
         return true;
@@ -1369,7 +1381,7 @@ async function schedulerTick(): Promise<void> {
         // signal that the delta mapping turns into a per-pair decision. We do NOT
         // persist the ID here - only after a clean sync.
         let forceFullWalk = false;
-        let driveAffected = new Set<string>();
+        const driveTargetsByPair = new Map<string, SyncTarget[]>();
         let scope: string | null = null;
         let savedId: string | null = null;
         let processedId: string | null = null;
@@ -1390,8 +1402,12 @@ async function schedulerTick(): Promise<void> {
                     forceFullWalk = true;
                     logger.info(`delta: ${mapped.unmappable.length}/${res.nodeEvents.length} event(s) unmappable -> full walk`);
                 } else {
-                    for (const t of mapped.targets) driveAffected.add(t.pairId);
-                    logger.info(`delta: ${res.nodeEvents.length} event(s) -> pairs [${[...driveAffected].join(', ') || 'none'}]`);
+                    for (const t of mapped.targets) {
+                        const arr = driveTargetsByPair.get(t.pairId) ?? [];
+                        arr.push(t);
+                        driveTargetsByPair.set(t.pairId, arr);
+                    }
+                    logger.info(`delta: ${res.nodeEvents.length} event(s) -> pairs [${[...driveTargetsByPair.keys()].join(', ') || 'none'}]`);
                 }
             } else if (forceFullWalk && res.nodeEvents.length > 0) {
                 logger.info('delta: feed opaque (refresh/fast-forward/remove) -> full walk');
@@ -1400,31 +1416,36 @@ async function schedulerTick(): Promise<void> {
             logger.warn(`Event feed poll failed: ${(error as Error).message ?? error}`);
         }
 
-        // Every pair is real-time. Sync when the Drive side is opaque (full
-        // walk), a mapped event points at this pair, or the local stat-scan
-        // shows a change. Clean pairs are skipped to the next tick.
+        // Every pair is real-time. Sync on: an opaque feed (full walk), a mapped
+        // Drive event, or a local stat-scan change. When the delta engine is on
+        // and the feed is clean, assemble a surgical delta (Drive targets + local
+        // diff); otherwise fall back to the full walk. Clean pairs are skipped.
         const toSync = new Set<string>();
+        const deltas = new Map<string, DeltaInput>();
         for (const p of all) {
-            if (forceFullWalk || driveAffected.has(p.id)) {
+            if (forceFullWalk) {
                 toSync.add(p.id);
                 continue;
             }
-            let dirty = false;
+            const targets = DELTA_ENABLED ? (driveTargetsByPair.get(p.id) ?? []) : [];
+            let diff: LocalDiff;
             try {
-                const diff = await diffLocal(db, p);
-                dirty = !localDiffEmpty(diff);
-                if (dirty) {
-                    logger.info(`local: pair ${p.id} -> +${diff.added.length} ~${diff.modified.length} -${diff.removed.length}`);
-                }
+                diff = await diffLocal(db, p);
             } catch (error) {
                 // A missing/erroring local dir is a real problem the full sync
                 // surfaces properly (assertSourceAvailable); trigger it instead of
                 // silently skipping the pair.
                 logger.warn(`Local scan failed for pair ${p.id}: ${(error as Error).message ?? error}`);
-                dirty = true;
+                toSync.add(p.id);
+                continue;
             }
-            if (dirty) toSync.add(p.id);
-            // else: clean real-time pair - just wait for the next tick.
+            const dirty = !localDiffEmpty(diff);
+            if (targets.length === 0 && !dirty) continue; // clean - next tick
+            toSync.add(p.id);
+            if (DELTA_ENABLED) {
+                deltas.set(p.id, { targets, localDiff: diff });
+                logger.info(`delta: pair ${p.id} -> ${targets.length} Drive target(s), +${diff.added.length} ~${diff.modified.length} -${diff.removed.length}`);
+            }
         }
 
         // Run the syncs, tracking that every one completed cleanly. If any did
@@ -1437,7 +1458,7 @@ async function schedulerTick(): Promise<void> {
                 allSynced = false;
                 break;
             }
-            const started = await runSync(id);
+            const started = await runSync(id, false, deltas.get(id) ?? null);
             if (!started || lastSyncErrored) {
                 allSynced = false;
                 break;

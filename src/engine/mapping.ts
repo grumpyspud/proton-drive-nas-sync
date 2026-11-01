@@ -110,18 +110,26 @@ export async function mapEventsToTargets(
             continue;
         }
 
-        // updated: union old pair (sync.db) with new pair (ancestry). A rename or
-        // move is an updated event whose new parent differs from the stored one.
+        // updated: an in-place content change stays 'updated'. A move or rename
+        // (the node's current location differs from its stored one) becomes a
+        // delete at the old relPath + a create at the new relPath, so the delta
+        // engine can act on both ends surgically without a move op.
         const known = db.getNodeByDriveUid(ev.nodeUid);
-        const seen = new Set<string>();
-        if (known) {
+        if (known && resolved) {
+            if (known.pairId === resolved.pairId && known.relPath === resolved.relPath) {
+                targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'updated', driveUid: ev.nodeUid, kind: known.kind });
+            } else {
+                targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'deleted', driveUid: ev.nodeUid, kind: known.kind });
+                targets.push({ pairId: resolved.pairId, relPath: resolved.relPath, op: 'created', driveUid: ev.nodeUid, kind: resolved.kind });
+            }
+        } else if (known && !resolved) {
+            // Known node whose current location could not be resolved (deleted or
+            // transient). Keep it as 'updated'; the delta path retries getNode and
+            // falls back to a full walk if that still fails.
             targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'updated', driveUid: ev.nodeUid, kind: known.kind });
-            seen.add(known.pairId);
-        }
-        if (resolved && !seen.has(resolved.pairId)) {
-            targets.push({ pairId: resolved.pairId, relPath: resolved.relPath, op: 'updated', driveUid: ev.nodeUid, kind: resolved.kind });
-        }
-        if (!known && !resolved) {
+        } else if (!known && resolved) {
+            targets.push({ pairId: resolved.pairId, relPath: resolved.relPath, op: 'created', driveUid: ev.nodeUid, kind: resolved.kind });
+        } else {
             unmappable.push(ev);
         }
     }

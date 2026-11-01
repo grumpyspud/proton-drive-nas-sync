@@ -517,3 +517,108 @@ export async function runDeletionBarrier(ctx: ReconcileContext): Promise<void> {
         }
     }
 }
+
+/**
+ * Drive the reconcile over an already-populated context: reconcile folders
+ * parent-first, plan + run the file transfer phase with bounded concurrency,
+ * then execute the deletion barrier. Shared by the full walk (`syncOnce`) and
+ * the targeted delta path (`syncDelta`), so both use the exact same per-node
+ * logic. Reads only from the context's maps, so it works for a complete map
+ * (full walk) or a targeted subset (delta).
+ */
+export async function runReconcile(ctx: ReconcileContext, transferConcurrency: number): Promise<void> {
+    // ---- Folders (create both ways; defer deletions as a unit) ----
+    const folderRelPaths = new Set<string>();
+    for (const [rp, e] of ctx.localByRel) if (e.kind === 'folder') folderRelPaths.add(rp);
+    for (const [rp, e] of ctx.driveByRel) if (e.kind === 'folder') folderRelPaths.add(rp);
+    for (const [rp, n] of ctx.storedByRel) if (n.kind === 'folder') folderRelPaths.add(rp);
+
+    const sortedFolders = [...folderRelPaths]
+        .map((p) => ({ p, depth: p.split('/').length }))
+        .sort((a, b) => a.depth - b.depth)
+        .map((x) => x.p);
+    let folderI = 0;
+    for (const relPath of sortedFolders) {
+        ctx.checkAbort();
+        if (++folderI % 500 === 0) await new Promise<void>((r) => setImmediate(r));
+        await reconcileFolder(ctx, relPath);
+    }
+
+    // ---- Files ----
+    const fileRelPaths = new Set<string>();
+    for (const [rp, e] of ctx.localByRel) if (e.kind === 'file') fileRelPaths.add(rp);
+    for (const [rp, e] of ctx.driveByRel) if (e.kind === 'file') fileRelPaths.add(rp);
+    for (const [rp, n] of ctx.storedByRel) if (n.kind === 'file') fileRelPaths.add(rp);
+
+    // ---- Plan pass: count every file the reconcile will PROCESS and estimate
+    //      the DATA that will move (drives the overall bar readouts). Cheap
+    //      signals only (no hashing). ----
+    let planI = 0;
+    for (const relPath of fileRelPaths) {
+        if (++planI % 2000 === 0) await new Promise<void>((r) => setImmediate(r));
+        if (ctx.isUnderDeletedFolder(relPath)) continue;
+        const L = ctx.localByRel.get(relPath);
+        const D = ctx.driveByRel.get(relPath);
+        const S = ctx.storedByRel.get(relPath);
+        const inLocal = !!L;
+        const inDrive = !!D;
+        const inDb = !!S;
+        const dSize = driveSize(D?.node);
+        let bytes = 0;
+
+        if (inLocal && !inDrive && !inDb) {
+            bytes = L!.size;
+        } else if (!inLocal && inDrive && !inDb) {
+            bytes = dSize;
+        } else if (inLocal && inDrive && !inDb) {
+            bytes = L!.size + dSize; // assume conflict
+        } else if (inLocal && inDrive) {
+            const localChanged = S!.localSha1 != null && (S!.localSize !== L!.size || S!.localMtime !== L!.mtimeMs);
+            const driveChanged = S!.driveFingerprint != null && D!.fingerprint !== S!.driveFingerprint;
+            if (localChanged && !driveChanged) bytes = L!.size;
+            else if (!localChanged && driveChanged) bytes = dSize;
+            else if (localChanged && driveChanged) bytes = L!.size + dSize;
+        } else if (inLocal && !inDrive) {
+            const localChanged = S!.localSha1 != null && (S!.localSize !== L!.size || S!.localMtime !== L!.mtimeMs);
+            if (localChanged) bytes = L!.size;
+        } else if (!inLocal && inDrive) {
+            const driveChanged = S!.driveFingerprint != null && D!.fingerprint !== S!.driveFingerprint;
+            if (driveChanged) bytes = dSize;
+        }
+
+        ctx.totalFiles++;
+        ctx.totalBytes += bytes;
+    }
+    ctx.onProgress?.({ type: 'sync-plan', totalBytes: ctx.totalBytes, totalFiles: ctx.totalFiles });
+
+    // ---- Transfer phase: bounded-concurrency reconcile over the file set ----
+    const queue = [...fileRelPaths];
+    let abortError: Error | null = null;
+    const workers = Array.from({ length: Math.min(transferConcurrency, queue.length) }, async () => {
+        let workerI = 0;
+        while (true) {
+            if (abortError || ctx.shouldAbort?.()) {
+                abortError ??= new SyncAbortedError();
+                return;
+            }
+            const relPath = queue.shift();
+            if (relPath === undefined) return;
+            try {
+                await reconcileFile(ctx, relPath);
+            } catch (err) {
+                if (err instanceof SyncAbortedError) {
+                    abortError = err;
+                    return;
+                }
+                throw err;
+            }
+            // Yield a real macrotask every N files so the healthcheck stays responsive.
+            if (++workerI % 50 === 0) await new Promise<void>((r) => setImmediate(r));
+        }
+    });
+    await Promise.all(workers);
+    if (abortError) throw abortError;
+
+    // ---- Deletion barrier: tripwire over ALL deletions, then execute (soft) ----
+    await runDeletionBarrier(ctx);
+}
