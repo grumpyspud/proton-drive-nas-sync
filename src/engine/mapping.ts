@@ -134,11 +134,18 @@ export async function mapEventsToTargets(
                 targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'updated', driveUid: ev.nodeUid, kind: known.kind });
             } else if (known.pairId === resolved.pairId && known.kind === 'file') {
                 // Within-pair file move/rename: a cheap rename instead of a
-                // delete + re-download. Folder moves stay delete+create (M4
-                // scopes to file moves; folder subtree moves are a later op).
+                // delete + re-download.
                 targets.push({ pairId: known.pairId, relPath: resolved.relPath, oldRelPath: known.relPath, op: 'moved', driveUid: ev.nodeUid, kind: 'file' });
+            } else if (known.pairId === resolved.pairId && known.kind === 'folder') {
+                // Within-pair folder move/rename: the delta cannot do a cheap
+                // subtree move yet (deferred). Force a full walk, which handles it
+                // coherently (recycle the old subtree + mkdir new + re-download).
+                // A surgical delete+create here would orphan the children (they
+                // emit no events of their own on a folder move) and later trash
+                // them - data loss.
+                unmappable.push(ev);
             } else {
-                // Cross-pair move, or a folder move: delete old + create new.
+                // Cross-pair move: delete old + create new.
                 targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'deleted', driveUid: ev.nodeUid, kind: known.kind });
                 targets.push({ pairId: resolved.pairId, relPath: resolved.relPath, op: 'created', driveUid: ev.nodeUid, kind: resolved.kind });
             }

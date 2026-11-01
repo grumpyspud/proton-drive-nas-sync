@@ -122,7 +122,14 @@ export async function syncDelta(options: SyncDeltaOptions): Promise<SyncResult |
     // 4. Drive side: created/updated targets fetch their node (targeted getNode);
     //    deleted targets are absent (nothing to fetch). Then backfill any affected
     //    relPath that has a stored node with a known driveUid, so local changes
-    //    resolve their Drive side from sync.db without an API call.
+    //    resolve their Drive side from sync.db without an API call. relPaths with a
+    //    `deleted` target are skipped in the backfill: the node is gone from Drive,
+    //    so backfilling it would make reconcile treat it as "still present" and
+    //    skip the recycle instead of soft-deleting the local copy.
+    const deletedRelPaths = new Set<string>();
+    for (const t of effTargets) {
+        if (t.op === 'deleted' && t.relPath !== null) deletedRelPaths.add(t.relPath);
+    }
     for (const t of effTargets) {
         if (t.relPath === null) continue;
         if (t.op === 'deleted') continue;
@@ -143,6 +150,7 @@ export async function syncDelta(options: SyncDeltaOptions): Promise<SyncResult |
     }
     for (const relPath of affected) {
         if (ctx.driveByRel.has(relPath)) continue;
+        if (deletedRelPaths.has(relPath)) continue;
         const s = db.getNode(pairId, relPath);
         if (s && s.driveUid) {
             ctx.driveByRel.set(relPath, {
