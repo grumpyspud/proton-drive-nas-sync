@@ -7,7 +7,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configDir, loadMasterKey } from '../crypto/keySource';
-import { CACHE_DIR, DELTA_ENABLED, REALTIME_INTERVAL_SECONDS } from '../config';
+import { CACHE_DIR, DELTA_ENABLED, REALTIME_INTERVAL_SECONDS, FULL_SCAN_INTERVAL } from '../config';
 import { listLocalDir, mkdirLocal } from '../fs/browse';
 import { resolveTls, type TlsConfig } from './tls';
 import { findFolder, findOrCreateFolderPath } from '../fs/folders';
@@ -1354,6 +1354,14 @@ function lastEventIdKey(treeEventScopeId: string): string {
     return `lastEventId:${treeEventScopeId}`;
 }
 
+// Last full (un-pruned) local scan per pair. Pruning misses in-place content
+// edits (directory mtime does not change on a content-only write), so a full
+// scan re-stats every file every FULL_SCAN_INTERVAL seconds to catch those.
+// Starts empty so the first tick after boot is always a full scan (catching
+// any edits made while the app was down). In-memory only; a restart simply
+// full-scans again, which is also what repopulates the pruning baseline.
+const lastFullScanAt = new Map<string, number>();
+
 async function schedulerTick(): Promise<void> {
     // Never auto-trigger while a sync is already running (manual or scheduled),
     // while paused, or while a deletion confirmation is awaiting the user.
@@ -1430,7 +1438,11 @@ async function schedulerTick(): Promise<void> {
             const targets = DELTA_ENABLED ? (driveTargetsByPair.get(p.id) ?? []) : [];
             let diff: LocalDiff;
             try {
-                diff = await diffLocal(db, p);
+                const now = Date.now();
+                const lastFull = lastFullScanAt.get(p.id) ?? 0;
+                const fullScan = FULL_SCAN_INTERVAL > 0 && now - lastFull >= FULL_SCAN_INTERVAL * 1000;
+                diff = await diffLocal(db, p, { fullScan });
+                if (fullScan) lastFullScanAt.set(p.id, now);
             } catch (error) {
                 // A missing/erroring local dir is a real problem the full sync
                 // surfaces properly (assertSourceAvailable); trigger it instead of

@@ -171,6 +171,12 @@ export class SyncDB {
                 updated_at INTEGER NOT NULL,
                 PRIMARY KEY (pair_id, rel_path)
             );
+            CREATE TABLE IF NOT EXISTS dir_mtimes (
+                pair_id TEXT NOT NULL,
+                rel_path TEXT NOT NULL,
+                mtime INTEGER NOT NULL,
+                PRIMARY KEY (pair_id, rel_path)
+            );
             CREATE TABLE IF NOT EXISTS dupe_ignored (
                 pair_id TEXT NOT NULL,
                 rel_path TEXT NOT NULL,
@@ -255,6 +261,7 @@ export class SyncDB {
 
     removePair(id: string): void {
         this.db.prepare('DELETE FROM nodes WHERE pair_id = ?').run(id);
+        this.db.prepare('DELETE FROM dir_mtimes WHERE pair_id = ?').run(id);
         this.db.prepare('DELETE FROM dupe_ignored WHERE pair_id = ?').run(id);
         this.db.prepare('DELETE FROM conflicts WHERE pair_id = ?').run(id);
         this.db.prepare('DELETE FROM pairs WHERE id = ?').run(id);
@@ -360,6 +367,26 @@ export class SyncDB {
             if (++n % yieldEvery === 0) await new Promise<void>((r) => setImmediate(r));
         }
         return out;
+    }
+
+    /** Stored directory mtimes for a pair (relPath -> mtime), the baseline the
+     *  pruned local scan compares against. Empty until a scan populates it. The
+     *  pair root is keyed as the empty string. */
+    getDirMtimes(pairId: string): Map<string, number> {
+        const rows = this.db.prepare('SELECT rel_path, mtime FROM dir_mtimes WHERE pair_id = ?').all(pairId) as unknown as Array<{ rel_path: string; mtime: number }>;
+        return new Map(rows.map((r) => [r.rel_path, r.mtime]));
+    }
+
+    /** Record a directory's current mtime (the pruning baseline). */
+    upsertDirMtime(pairId: string, relPath: string, mtime: number): void {
+        this.db
+            .prepare('INSERT INTO dir_mtimes (pair_id, rel_path, mtime) VALUES (?, ?, ?) ON CONFLICT(pair_id, rel_path) DO UPDATE SET mtime = excluded.mtime')
+            .run(pairId, relPath, mtime);
+    }
+
+    /** Drop all stored dir mtimes for a pair. */
+    clearDirMtimes(pairId: string): void {
+        this.db.prepare('DELETE FROM dir_mtimes WHERE pair_id = ?').run(pairId);
     }
 
     /** Files that have been pulled from Drive but never hashed locally

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { NodeType } from '@protontech/drive-sdk';
 import type { NodeEntity, ProtonDriveClient } from '@protontech/drive-sdk';
 import { nodeName } from '../fs/files';
+import type { SyncNode } from '../state/syncDb';
 
 export interface LocalEntry {
     relPath: string; // posix-style, relative to the source root
@@ -127,6 +128,92 @@ export async function walkLocalTree(root: string, options: WalkLocalOptions = {}
     await walk(root, '');
     emit(files, folders, true);
     return entries;
+}
+
+export interface PrunedWalkResult {
+    entries: LocalEntry[];
+    /** Directories whose mtime differs from the stored baseline (or is new); the
+     *  caller persists these as the new pruning baseline. The pair root is keyed
+     *  as the empty string. */
+    changedDirs: Map<string, number>;
+}
+
+/**
+ * Like `walkLocalTree`, but prunes unchanged subdirectories using their mtime:
+ * for a directory whose mtime matches the stored baseline, no file is `stat`ed
+ * (they are reconstructed from `storedByRel` instead) - the tree structure is
+ * still walked (readdir + stat each subdirectory) so a change in any descendant
+ * directory is still found. Add/remove/rename anywhere bumps the affected
+ * directory's mtime and forces a full stat of that directory's files; only
+ * in-place content edits (which do NOT bump a directory's mtime) are missed,
+ * and those are recovered by the periodic full scan.
+ */
+export async function walkLocalTreePruned(
+    root: string,
+    storedDirMtimes: Map<string, number>,
+    storedByRel: Map<string, SyncNode>,
+    options: WalkLocalOptions = {},
+): Promise<PrunedWalkResult> {
+    const { excludePrefix = '.pdn-', onPartial, onConflict, onProgress } = options;
+    const entries: LocalEntry[] = [];
+    const changedDirs = new Map<string, number>();
+    let files = 0;
+    let folders = 0;
+    const emit = throttledProgress(onProgress);
+
+    async function walk(dir: string, rel: string): Promise<void> {
+        // Stat THIS directory for its mtime (the pruning decision) and its entry.
+        const dirSt = await stat(dir);
+        const storedMtime = storedDirMtimes.get(rel);
+        const dirChanged = storedMtime === undefined || storedMtime !== dirSt.mtimeMs;
+        if (rel !== '') {
+            folders++;
+            entries.push({ relPath: rel, absPath: dir, kind: 'folder', size: dirSt.size, mtimeMs: dirSt.mtimeMs });
+            emit(files, folders);
+        }
+        if (dirChanged) changedDirs.set(rel, dirSt.mtimeMs);
+
+        const dirents = await readdir(dir, { withFileTypes: true });
+        for (const d of dirents) {
+            if (d.name.startsWith(excludePrefix)) continue;
+            const abs = path.join(dir, d.name);
+            const relPath = rel === '' ? d.name : `${rel}/${d.name}`;
+            if (d.isDirectory()) {
+                await walk(abs, relPath);
+            } else if (d.isFile()) {
+                if (d.name.endsWith('.pdn-part')) {
+                    await onPartial?.(relPath, abs);
+                    continue;
+                }
+                if (/\\.conflict-\\d+$/.test(d.name)) {
+                    const st = await stat(abs);
+                    await onConflict?.(relPath, abs, st.size, st.mtimeMs);
+                    continue;
+                }
+                if (dirChanged) {
+                    const st = await stat(abs);
+                    files++;
+                    entries.push({ relPath, absPath: abs, kind: 'file', size: st.size, mtimeMs: st.mtimeMs });
+                } else {
+                    const s = storedByRel.get(relPath);
+                    if (s && s.kind === 'file' && s.localSize != null && s.localMtime != null) {
+                        files++;
+                        entries.push({ relPath, absPath: abs, kind: 'file', size: s.localSize, mtimeMs: s.localMtime });
+                    } else {
+                        // Missing/partial stored data in an "unchanged" dir - stat to be safe.
+                        const st = await stat(abs);
+                        files++;
+                        entries.push({ relPath, absPath: abs, kind: 'file', size: st.size, mtimeMs: st.mtimeMs });
+                    }
+                }
+                emit(files, folders);
+            }
+        }
+    }
+
+    await walk(root, '');
+    emit(files, folders, true);
+    return { entries, changedDirs };
 }
 
 /** Stat a single relPath within a local root; null when absent or not a file/folder. */

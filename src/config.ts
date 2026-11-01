@@ -55,3 +55,21 @@ export const DELTA_ENABLED = (process.env.PDN_DELTA ?? 'on').trim().toLowerCase(
  * large trees. Set to 'on' for full logging when troubleshooting.
  */
 export const LOG_SKIPS = (process.env.PDN_LOG_SKIPS ?? 'off').trim().toLowerCase() === 'on';
+
+/**
+ * Whether to prune the local stat-scan with directory mtimes. When 'on'
+ * (default), each tick stats only the directories and descends into the ones
+ * whose mtime changed, catching add/remove/rename without stat-ing every file.
+ * In-place content edits do NOT bump a directory's mtime, so a full file scan
+ * still runs every FULL_SCAN_INTERVAL seconds to catch those. 'off' restores
+ * the always-full scan (status-quo behavior).
+ */
+export const LOCAL_PRUNE = (process.env.PDN_LOCAL_PRUNE ?? 'on').trim().toLowerCase() !== 'off';
+
+/**
+ * Seconds between full local file scans while LOCAL_PRUNE is on. A full scan
+ * re-stats every file, so it is the only thing that catches in-place content
+ * edits (which directory mtimes miss). Default 300 (5 min); 0 disables the
+ * periodic scan entirely (only add/remove/rename are detected).
+ */
+export const FULL_SCAN_INTERVAL = Math.max(0, Number.parseInt(process.env.PDN_FULL_SCAN_INTERVAL ?? '300', 10) || 0);

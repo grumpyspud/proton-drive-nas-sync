@@ -106,6 +106,8 @@ are never written to disk. On restart the app resumes the session automatically.
 | `PDN_CACHE_LRU_MAX` | `2000` | Max entries for `lru`, or the size of the RAM front for `disk` (0 = none). Keep modest to bound RAM; raise on big-RAM hosts, lower on constrained ones. |
 | `PDN_CACHE_DIR` | `<config>/cache` | Directory for the disk-backed cache (only when `PDN_CACHE=disk`). Mount fast storage (NVMe) here. |
 | `PDN_LOG_SKIPS` | `off` | Set `on` to write per-file `[skip]` lines (unchanged files) to `sync.log` for troubleshooting. Default keeps the log small and speeds up large-tree reconciles. |
+| `PDN_LOCAL_PRUNE` | `on` | Prune the local stat-scan with directory mtimes: each tick stats only directories and descends into the ones whose mtime changed (add/remove/rename), skipping per-file stats for unchanged folders. `off` restores the always-full scan. |
+| `PDN_FULL_SCAN_INTERVAL` | `300` | Seconds between full local scans while `PDN_LOCAL_PRUNE` is on. A full scan re-stats every file, so it is the only thing that catches in-place content edits (a directory mtime does not change on a content-only write). `0` disables the periodic scan. |
 
 The default `disk` cache writes each Drive entity to a SQLite database on disk
 and keeps only a bounded `PDN_CACHE_LRU_MAX`-sized slice in RAM, so memory stays
