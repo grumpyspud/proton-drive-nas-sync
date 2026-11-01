@@ -1337,15 +1337,15 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 // ---- background scheduler: check-then-sync loop ----
 //
-// Every REALTIME_INTERVAL_SECONDS we LOOK (not necessarily sync):
-//   1. poll the Drive event feed once (volume-level, covers every pair),
-//   2. stat-scan each watched pair's local dir for new/modified/missing files,
-//   3. sync only the pairs that show a change.
-// "Watched" = any real-time pair, plus any auto-sync pair whose interval has
-// elapsed. A clean auto-sync pair is marked synced (its timer resets) so it is
-// not re-scanned every tick; a clean real-time pair just waits for the next
-// tick. The full three-way walk remains the fallback for tree_refresh /
-// fast_forward and first sync, surfaced as "sync now" via runSync().
+// Every REALTIME_INTERVAL_SECONDS we LOOK (not necessarily sync). Each tick:
+//   1. poll the Drive event feed once (volume-level, marks changed nodes stale
+//      so the full walks below re-fetch them - correct for every cache backend),
+//   2. run every auto-sync pair whose interval elapsed via its ORIGINAL full
+//      walk (never gated on the feed - see schedulerTick),
+//   3. check-then-sync each real-time pair: sync on a feed change or a local
+//      stat-scan difference, otherwise skip to the next tick.
+// The full three-way walk remains the workhorse; the feed only decides WHEN a
+// real-time pair runs it and keeps the cache fresh for everyone.
 
 function lastEventIdKey(treeEventScopeId: string): string {
     return `lastEventId:${treeEventScopeId}`;
@@ -1400,22 +1400,18 @@ async function schedulerTick(): Promise<void> {
     const db = new SyncDB(syncDbPath());
     try {
         const all = db.listPairs();
+        const rtPairs = all.filter((p) => p.realTime);
         const autoDue = dueAutoSyncPairs(db);
-        const watchPairs: Pair[] = [];
-        const seen = new Set<string>();
-        for (const p of [...autoDue, ...all.filter((x) => x.realTime)]) {
-            if (!seen.has(p.id)) {
-                seen.add(p.id);
-                watchPairs.push(p);
-            }
-        }
 
         // Nothing real-time and nothing scheduled: skip the whole tick.
-        if (watchPairs.length === 0) return;
+        if (rtPairs.length === 0 && autoDue.length === 0) return;
 
-        // Drive-side check: poll the event feed once (all pairs share the one
-        // "My Files" scope). A tree_refresh / fast_forward is a full-refresh
-        // signal. We do NOT persist the ID here - only after a clean sync.
+        // Poll the event feed once (all pairs share the one "My Files" scope).
+        // Its job here is the stale-marking side effect: changed nodes get marked
+        // stale so the full walks below re-fetch them from the API instead of
+        // serving a stale cache entry. For real-time pairs it also supplies the
+        // driveChanged / tree_refresh / fast_forward dirty signal. We do NOT
+        // persist the ID here - only after a clean sync.
         let globalDirty = false;
         let scope: string | null = null;
         let savedId: string | null = null;
@@ -1432,10 +1428,19 @@ async function schedulerTick(): Promise<void> {
             logger.warn(`Event feed poll failed: ${(error as Error).message ?? error}`);
         }
 
-        // Decide what to sync. Phase 1 does not map Drive events to pairs, so a
-        // Drive-side change (or a full-refresh signal) syncs every watched pair.
-        const toSync = new Set<string>();
-        for (const p of watchPairs) {
+        // Scheduled (auto-sync) pairs use the ORIGINAL method: always run the
+        // full walk when their interval elapses. They must NOT be gated on the
+        // shared feed, because a real-time pair's drain consumes volume-wide
+        // events for every pair - so "no new events since last poll" does not
+        // mean "this pair is clean", and the local scan is blind to Drive-side
+        // edits. The full walk is self-contained: it re-fetches any node the
+        // feed marked stale.
+        const toSync = new Set<string>(autoDue.map((p) => p.id));
+
+        // Real-time pairs ride the check-then-sync loop. Phase 1 does not map
+        // Drive events to pairs, so any Drive change syncs every real-time pair;
+        // only when the Drive side is clean do we consult the local scan.
+        for (const p of rtPairs) {
             if (globalDirty) {
                 toSync.add(p.id);
                 continue;
@@ -1450,13 +1455,7 @@ async function schedulerTick(): Promise<void> {
                 logger.warn(`Local scan failed for pair ${p.id}: ${(error as Error).message ?? error}`);
                 dirty = true;
             }
-            if (dirty) {
-                toSync.add(p.id);
-            } else if (p.autoSync) {
-                // Clean auto-sync pair: nothing changed on either side, so a full
-                // walk would be a no-op. Reset its timer and skip it.
-                db.markSynced(p.id);
-            }
+            if (dirty) toSync.add(p.id);
             // else: clean real-time pair - just wait for the next tick.
         }
 

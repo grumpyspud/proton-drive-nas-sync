@@ -124,24 +124,26 @@ Replace `setInterval(schedulerTick, 60_000)` with a loop at
 `PDN_REALTIME_INTERVAL`. Each tick:
 
 1. Guard on `syncing || paused || pendingDeletion` (same as today).
-2. Build the watched set = every `realTime` pair, plus every `autoSync` pair
-   whose `intervalSeconds` elapsed. If empty, skip the tick.
-3. Poll the feed (1.1/1.2). Track `driveDirty`, `treeRefresh`, `fastForward`.
-4. For each watched pair, decide dirty:
-   - `driveDirty || treeRefresh || fastForward` -> dirty (full `syncOnce()`).
-   - else stat-scan local: compare `(size, mtime)` against `db.nodes`; any
-     new/missing/differing path -> dirty.
-5. Run sync:
-   - dirty -> full `syncOnce()` (Phase 1; Phase 2 makes this a delta).
-   - clean `autoSync` pair -> `markSynced()` (reset its timer; a full walk
-     would be a no-op, so it is skipped until the interval elapses again).
-   - clean `realTime` pair -> nothing (re-checked next tick).
-6. Advance `lastEventId` to the drained max ID only after every triggered sync
+2. Poll the feed (1.1/1.2) once if any pair is real-time or due. Track
+   `driveDirty`, `treeRefresh`, `fastForward`. The stale-marking side effect is
+   what keeps every subsequent full walk correct, regardless of cache backend.
+3. Run every due `autoSync` pair via its ORIGINAL full walk, unconditionally.
+   Do NOT gate it on the feed: the feed is volume-wide and a real-time pair's
+   drain consumes events for every pair, so "no new events since last poll" does
+   not mean "this pair is clean", and the local scan is blind to Drive-side
+   edits. (Confirmed on grumpy-1: a real-time pair drained an auto-sync pair's
+   events; the auto-sync saw a clean feed + clean local scan and skipped a real
+   change. Reverted to the full walk for scheduled pairs.)
+4. For each `realTime` pair:
+   - `driveDirty || treeRefresh || fastForward` -> full `syncOnce()`.
+   - else stat-scan local: new/missing/differing path -> full `syncOnce()`.
+   - else -> nothing (re-checked next tick).
+5. Advance `lastEventId` to the drained max ID only after every triggered sync
    ran cleanly (no error / abort / tripwire). On any failure keep the old ID so
    the replayed events are re-processed next tick.
 
-`autoSync` pairs therefore also ride the feed + local scan before their
-scheduled full walk, and an idle due sync is skipped (user sign-off #3).
+`autoSync` pairs keep the original scheduled full walk (user correction to
+sign-off #3); only `realTime` pairs ride the feed + local scan fast path.
 
 ### 1.4 Self-write handling
 
@@ -219,5 +221,6 @@ and is validated first.
 1. `PDN_REALTIME_INTERVAL` default 30s, clamp 10-60s - confirmed.
 2. `real_time` now means "participates in the fast loop"; the old 60s full-walk
    scheduler is fully replaced.
-3. `autoSync` pairs also ride the feed + local scan before their full walk, and
-   an idle due sync is skipped.
+3. `autoSync` pairs: reverted to their original scheduled full walk. Riding the
+   feed + local scan (with an idle-skip) proved unsafe on a shared volume, so
+   scheduled pairs no longer skip - only `realTime` pairs use the fast path.
