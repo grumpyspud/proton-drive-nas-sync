@@ -853,7 +853,7 @@ function DriveTrashModal({ onClose }: { onClose: () => void }) {
         setError(null);
         try {
             await restoreDriveTrash(it.uid);
-            await reload();
+            setItems((prev) => prev.filter((x) => x.uid !== it.uid));
         } catch (err) {
             setError((err as Error).message);
         }
@@ -866,7 +866,7 @@ function DriveTrashModal({ onClose }: { onClose: () => void }) {
             label: 'Delete',
             run: async () => {
                 await deleteDriveTrash(it.uid);
-                await reload();
+                setItems((prev) => prev.filter((x) => x.uid !== it.uid));
             },
         });
     }
@@ -878,7 +878,7 @@ function DriveTrashModal({ onClose }: { onClose: () => void }) {
             label: 'Empty trash',
             run: async () => {
                 await clearDriveTrash();
-                await reload();
+                setItems([]);
             },
         });
     }
