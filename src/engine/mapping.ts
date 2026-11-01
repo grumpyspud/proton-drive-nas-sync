@@ -139,8 +139,17 @@ export async function mapEventsToTargets(
                 // relPath prefix (see resolveMoves); the descendants emit no events
                 // of their own, so delete+create would orphan them.
                 targets.push({ pairId: known.pairId, relPath: resolved.relPath, oldRelPath: known.relPath, op: 'moved', driveUid: ev.nodeUid, kind: known.kind });
+            } else if (known.kind === 'folder') {
+                // Cross-pair folder move: the destination pair must download the
+                // whole subtree, but the descendants emit no events of their own
+                // (only the folder moved across pairs). A surgical delete+create
+                // would leave the destination pair with an empty folder. Route to
+                // a full walk, which recycles the old side and re-downloads the
+                // subtree on the new side.
+                unmappable.push(ev);
             } else {
-                // Cross-pair move: delete old + create new.
+                // Cross-pair file move: delete old + create new (a file is a
+                // single node, so the create downloads it whole).
                 targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'deleted', driveUid: ev.nodeUid, kind: known.kind });
                 targets.push({ pairId: resolved.pairId, relPath: resolved.relPath, op: 'created', driveUid: ev.nodeUid, kind: resolved.kind });
             }
