@@ -79,9 +79,9 @@ services:
 
 1. Open the UI and sign in with your Proton account.
 2. **Create Sync Pair** (top bar): pick the local folder (absolute path under
-   `/data`) and a Proton Drive folder, then choose **Manual** or an **Auto-sync**
-   schedule.
-3. **Sync**: watch progress (files processed, bytes, network rate) in real time.
+   `/data`) and a Proton Drive folder. The pair starts syncing in real time
+   automatically - no schedule to set.
+3. Watch progress (files processed, bytes, network rate) in the dashboard.
 
 For a full walkthrough with screenshots see [SETUP.md](SETUP.md); for a reference
 of every feature and option see [USER_GUIDE.md](USER_GUIDE.md).
@@ -108,6 +108,8 @@ are never written to disk. On restart the app resumes the session automatically.
 | `PDN_LOG_SKIPS` | `off` | Set `on` to write per-file `[skip]` lines (unchanged files) to `sync.log` for troubleshooting. Default keeps the log small and speeds up large-tree reconciles. |
 | `PDN_LOCAL_PRUNE` | `on` | Prune the local stat-scan with directory mtimes: each tick stats only directories and descends into the ones whose mtime changed (add/remove/rename), skipping per-file stats for unchanged folders. `off` restores the always-full scan. |
 | `PDN_FULL_SCAN_INTERVAL` | `300` | Seconds between full local scans while `PDN_LOCAL_PRUNE` is on. A full scan re-stats every file, so it is the only thing that catches in-place content edits (a directory mtime does not change on a content-only write). `0` disables the periodic scan. |
+| `PDN_REALTIME_INTERVAL` | `30` | Seconds between sync ticks (the event-feed poll + local stat-scan loop). Clamped to 10-60. |
+| `PDN_DELTA` | `on` | Set `off` to disable the surgical delta engine and full-walk every pair each tick (the original behavior). |
 
 The default `disk` cache writes each Drive entity to a SQLite database on disk
 and keeps only a bounded `PDN_CACHE_LRU_MAX`-sized slice in RAM, so memory stays

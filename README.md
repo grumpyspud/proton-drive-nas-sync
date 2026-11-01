@@ -24,9 +24,13 @@ and Proton Drive.
 - **Web UI**: Proton-style login (SRP + optional 2FA + optional mailbox
   password), folder-pair manager, and a live sync dashboard with progress bars
   (files processed + bytes + network rate), storage usage, and low-space warnings.
-- **Flexible schedules**: manual or auto-sync, from every 1 minute up to monthly.
+- **Real-time sync**: every pair syncs continuously - additions, edits, and
+  deletions on either side are mirrored automatically, with a manual **Sync**
+  button for an immediate run.
 - **Duplicate-file scan**: find and recycle duplicate files within a pair, with a
   minimum-size filter and an ignore list.
+- **Proton Drive trash view**: list, restore, permanently delete, and empty the
+  items in your Proton Drive trash from the dashboard.
 - **Configurable concurrency**: 1–4 parallel transfers.
 - **Encrypted-at-rest credentials**: only an AES-256-GCM encrypted session blob
   is persisted; passwords are never stored.
@@ -72,8 +76,8 @@ that `@protontech/crypto` depends on).
 
 ## Status
 
-M0–M6 complete: auth spike → file ops → encrypted session → state DB + backup/
-restore → bidirectional sync + progress UI → Docker packaging. Usable as a
+The feature set (auth, bidirectional sync, event-driven real-time sync,
+backup/restore, dedupe, Drive trash, and Docker packaging) is complete. Usable as a
 personal backup/sync tool; treat as beta, test against a throwaway Proton
 account first.
 

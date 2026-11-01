@@ -54,30 +54,17 @@ the other).
    volume; a path inside the container itself is rejected with a warning.
 3. **Proton Drive folder**: pick an existing Drive folder, or **My Files (entire
    drive)** to sync the whole drive.
-4. **Sync schedule**: **Manual** or **Auto-sync** (see below).
-5. Click **Create pair**.
+4. Click **Create pair**.
 
 ![Create sync pair](screenshots/07-add-pair-folder-picker.png)
 
-### Manual vs Auto-sync
+### Real-time sync
 
-- **Manual**: the pair only syncs when you click its **Sync** button.
-- **Auto-sync**: the pair syncs automatically on the interval you choose.
-
-| Frequency | Interval |
-|---|---|
-| 1 min | 60 seconds |
-| 15 min | 15 minutes |
-| 30 min | 30 minutes |
-| 1 hour | 1 hour |
-| 6 hours | 6 hours |
-| 12 hours | 12 hours |
-| 24 hours | 24 hours |
-| Weekly | 7 days |
-| Monthly | 30 days |
-
-Change a pair's schedule any time with the **Auto-sync** toggle and the frequency
-dropdown on its row.
+Every pair syncs in real time. The engine watches the Proton Drive event feed and
+stat-scans the local folder on a short interval, mirroring additions, edits, and
+deletions as soon as they are detected. The **Sync** button on a pair runs an
+immediate sync on demand, and the top-bar **⏸ Pause** is the only "don't sync"
+control.
 
 ---
 
@@ -213,6 +200,26 @@ The **Proton Drive Storage** card shows how much of your Proton Drive quota you'
   message appears under it.
 
 ![Storage warning](screenshots/18-storage-warning.png)
+
+The card's **Trash** button opens your Proton Drive trash (below).
+
+## Proton Drive trash
+
+The **Proton Drive Storage** card's **Trash** button lists everything currently in
+your Proton Drive trash:
+
+![Proton Drive trash](screenshots/24-drive-trash.png)
+
+Proton Drive stores only a trashed item's name (not its full path), so the list
+shows each item's name and type. From here you can:
+
+- **Restore**: return an item to its original folder. If it is inside a synced
+  pair, the next sync re-downloads it.
+- **Delete**: permanently remove a single item.
+- **Empty trash**: permanently delete everything in the trash.
+
+Delete and Empty trash are irreversible - that is exactly why they ask for
+confirmation.
 
 ---
 

@@ -42,8 +42,8 @@ Proton Drive. It is written in TypeScript on Node.js.
    in the Auth/Session layer here.
 2. **The SDK has no Sync module yet.** The bidirectional sync engine is built
    on the SDK's client primitives (list, upload, download, move, trash), with
-   change detection by interval polling: Proton Drive exposes no push/webhook
-   for remote changes.
+   change detection by polling the Drive event feed and stat-scanning the local
+   tree: Proton Drive exposes no push/webhook for remote changes.
 3. **The crypto model is changing.** Proton Drive moves to a new cryptographic
    model around end of 2026 / early 2027. Clients that only implement the old
    model will stop interoperating until they upgrade.
@@ -92,9 +92,11 @@ NAS path  →  Drive link ID  →  revision / content hash / mtime
 
 Change detection:
 
-The engine polls on the configured interval: there is no server-side push from
-Proton, and no filesystem watcher (a watcher would still miss remote Drive-side
-changes). Each cycle it walks both trees and diffs them against the state DB:
+The engine polls the Drive event feed and stat-scans the local tree on a short
+interval: there is no server-side push from Proton, and no filesystem watcher (a
+watcher would still miss remote Drive-side changes). Each cycle it maps Drive
+events to their pair and diffs against the state DB, full-walking only when the
+feed is opaque or a source is unavailable:
 
 - **Local (NAS) side**: a file's size + mtime are compared first; only if they
   differ is the file re-hashed. Unchanged files reuse the stored hash (no

@@ -144,14 +144,15 @@ This is your home base:
 ![Dashboard (dark)](screenshots/06-dashboard.png)
 
 - **Left: Sync activity:** live progress bars (files processed, bytes, and
-  network rate), the last sync
-  summary, and a status badge (Idle / Syncing / Paused).
+  network rate), the latest sync summary, and a status badge (Idle / Syncing /
+  Paused).
 - **Right: Local storage:** each data volume mounted into the container, with
   used/total and a fill bar.
 - **Right: Proton Drive Storage:** your Proton Drive usage, with a warning when
   space runs low.
 - **Right: Folder pairs:** the folders you're syncing, with per-pair Sync / Trash /
-  Remove actions, an Auto-sync toggle, and a Dedupe Scan button.
+  Remove actions and a Dedupe Scan button. Every pair syncs automatically in
+  real time - there is no schedule to set.
 
 The top bar holds the global controls:
 
@@ -180,10 +181,8 @@ folder on the NAS and the matching Proton Drive folder:
   to the container itself.
 - **Proton Drive folder**: pick an existing Drive folder, or **My Files (entire
   drive)** to sync the whole drive.
-- **Sync schedule**: either **Manual** (sync only when you click **Sync**) or
-  **Auto-sync** on a schedule, with a frequency from **1 min** through **Monthly**.
-
-Click **Create pair**, then **Sync** to run it immediately.
+Click **Create pair**. The pair starts syncing automatically in real time; the
+**Sync** button on its row runs an immediate sync on demand.
 
 > **Deletion safety.** Deletions are trashed before being removed, and if a sync
 > would delete more than a safety threshold of tracked files (for example, because

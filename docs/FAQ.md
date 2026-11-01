@@ -75,7 +75,8 @@ in. (That's a snapshot of your *setup*, not your files.)
 - **Two mounted volumes.** `/config` (state DB, encrypted session, pair config)
   and `/data` (the synced tree). Updating the container never loses state.
 - **Polling, not push.** Proton Drive exposes no webhook for remote changes, so
-  the scheduler polls on the configured interval.
+  the scheduler polls the Drive event feed and stat-scans local folders on a
+  short interval (default 30 s).
 
 ---
 
@@ -131,7 +132,7 @@ change. The SDK's changelog is the trigger that tells us the swap is due.
 
 ## How does the sync engine work?
 
-Each folder pair is a three-way reconcile, run on a schedule:
+Each folder pair is a three-way reconcile, run continuously in real time:
 
 1. **Walk** both trees: the local NAS folder and the Proton Drive folder ~
    using the SDK's listing calls.
@@ -213,8 +214,9 @@ Be aware of these before relying on it:
 
 - **Beta.** Milestones M0–M6 are complete and it's in daily use, but treat it as
   beta: test against a throwaway Proton account first.
-- **Not real-time.** There is no push/webhook from Proton, so sync is
-  poll-based; the shortest interval is 1 minute.
+- **Poll-based real time.** There is no push/webhook from Proton, so sync polls
+  the event feed and local folders every ~30 seconds - near real time, not
+  instant.
 - **Whole-file transfer.** A changed file is re-transferred in full: there is
   no block-level (rsync-style) delta.
 - **One account per instance.** A container syncs a single Proton account.
@@ -227,7 +229,6 @@ Be aware of these before relying on it:
   **Conflicts** panel; there is no content merge.
 - **Dedupe is per-pair and local-only.** It finds duplicates within one pair's
   local folder, on demand: not across pairs, and not on the Drive side.
-- **"Monthly" means ~30 days**, a fixed interval, not a calendar month.
 - **Human verification is manual.** Proton's CAPTCHA challenge (rare, usually
   one-time per account) requires a one-off browser step.
 - **Requires Docker.** Runs as a container with `/config` and `/data` mounts.
