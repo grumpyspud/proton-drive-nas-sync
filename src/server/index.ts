@@ -125,6 +125,8 @@ let syncing = false;
 let paused = false;
 let stopRequested = false;
 let syncingPairId: string | null = null;
+/** Latch set by runSync when a sync does not complete cleanly (error/abort/tripwire). */
+let lastSyncErrored = false;
 const hashJobs = new Map<string, { total: number; done: number; hashed: number }>();
 
 interface PendingDeletion {
@@ -173,6 +175,7 @@ async function runSync(pairId: string, allowDeletions = false): Promise<boolean>
         broadcast({ type: 'sync-complete', pairId, summary });
         return true;
     } catch (error) {
+        lastSyncErrored = true;
         if (error instanceof SyncAbortedError) {
             if (paused) broadcast({ type: 'sync-paused' });
             else broadcast({ type: 'sync-stopped' });
@@ -1335,13 +1338,14 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 // ---- background scheduler: check-then-sync loop ----
 //
 // Every REALTIME_INTERVAL_SECONDS we LOOK (not necessarily sync):
-//   1. poll the Drive event feed once (volume-level, covers all real-time pairs),
-//   2. stat-scan each real-time pair's local dir for new/modified/missing files,
-//   3. sync only the pairs that show a change, plus any auto-sync pair whose
-//      interval has elapsed.
-// The full three-way walk remains the fallback for tree_refresh / fast_forward
-// and first sync: those are surfaced as "sync now", and runSync() already does
-// the full walk.
+//   1. poll the Drive event feed once (volume-level, covers every pair),
+//   2. stat-scan each watched pair's local dir for new/modified/missing files,
+//   3. sync only the pairs that show a change.
+// "Watched" = any real-time pair, plus any auto-sync pair whose interval has
+// elapsed. A clean auto-sync pair is marked synced (its timer resets) so it is
+// not re-scanned every tick; a clean real-time pair just waits for the next
+// tick. The full three-way walk remains the fallback for tree_refresh /
+// fast_forward and first sync, surfaced as "sync now" via runSync().
 
 function lastEventIdKey(treeEventScopeId: string): string {
     return `lastEventId:${treeEventScopeId}`;
@@ -1396,59 +1400,87 @@ async function schedulerTick(): Promise<void> {
     const db = new SyncDB(syncDbPath());
     try {
         const all = db.listPairs();
-        const rtPairs = all.filter((p) => p.realTime);
-        const autoPairs = dueAutoSyncPairs(db);
-
-        // Nothing real-time and nothing scheduled: skip the whole tick.
-        if (rtPairs.length === 0 && autoPairs.length === 0) return;
-
-        const toSync = new Set<string>(autoPairs.map((p) => p.id));
-
-        // Drive-side check: poll the event feed once (all pairs share the one
-        // "My Files" scope). Persist the highest processed ID so events are not
-        // replayed. A tree_refresh / fast_forward is a full-refresh signal.
-        let driveChanged = false;
-        if (rtPairs.length > 0) {
-            try {
-                const sdk = authService.getSession().sdk;
-                const root = await sdk.getMyFilesRootFolder();
-                const scope = root.treeEventScopeId;
-                const savedId = db.getSetting(lastEventIdKey(scope));
-                const res = await pollEvents(sdk, scope, savedId);
-                if (res.lastEventId !== null && res.lastEventId !== savedId) {
-                    db.setSetting(lastEventIdKey(scope), res.lastEventId);
-                }
-                driveChanged = res.driveChanged || res.treeRefresh || res.fastForward;
-            } catch (error) {
-                // Event-feed failure is non-fatal: scheduled auto-sync still runs.
-                // Real-time pairs are retried on the next tick.
-                logger.warn(`Event feed poll failed: ${(error as Error).message ?? error}`);
+        const autoDue = dueAutoSyncPairs(db);
+        const watchPairs: Pair[] = [];
+        const seen = new Set<string>();
+        for (const p of [...autoDue, ...all.filter((x) => x.realTime)]) {
+            if (!seen.has(p.id)) {
+                seen.add(p.id);
+                watchPairs.push(p);
             }
         }
 
-        // Local-side check: stat-scan each real-time pair. In Phase 1 we do not
-        // map Drive events to pairs, so any Drive change syncs every real-time
-        // pair; only when the Drive side is clean do we consult the local scan.
-        for (const p of rtPairs) {
-            if (driveChanged) {
+        // Nothing real-time and nothing scheduled: skip the whole tick.
+        if (watchPairs.length === 0) return;
+
+        // Drive-side check: poll the event feed once (all pairs share the one
+        // "My Files" scope). A tree_refresh / fast_forward is a full-refresh
+        // signal. We do NOT persist the ID here - only after a clean sync.
+        let globalDirty = false;
+        let scope: string | null = null;
+        let savedId: string | null = null;
+        let processedId: string | null = null;
+        try {
+            const sdk = authService.getSession().sdk;
+            const root = await sdk.getMyFilesRootFolder();
+            scope = root.treeEventScopeId;
+            savedId = db.getSetting(lastEventIdKey(scope));
+            const res = await pollEvents(sdk, scope, savedId);
+            processedId = res.lastEventId;
+            globalDirty = res.driveChanged || res.treeRefresh || res.fastForward;
+        } catch (error) {
+            logger.warn(`Event feed poll failed: ${(error as Error).message ?? error}`);
+        }
+
+        // Decide what to sync. Phase 1 does not map Drive events to pairs, so a
+        // Drive-side change (or a full-refresh signal) syncs every watched pair.
+        const toSync = new Set<string>();
+        for (const p of watchPairs) {
+            if (globalDirty) {
                 toSync.add(p.id);
                 continue;
             }
+            let dirty = false;
             try {
-                if (await localDirty(db, p)) toSync.add(p.id);
+                dirty = await localDirty(db, p);
             } catch (error) {
                 // A missing/erroring local dir is a real problem the full sync
                 // surfaces properly (assertSourceAvailable); trigger it instead of
                 // silently skipping the pair.
                 logger.warn(`Local scan failed for pair ${p.id}: ${(error as Error).message ?? error}`);
+                dirty = true;
+            }
+            if (dirty) {
                 toSync.add(p.id);
+            } else if (p.autoSync) {
+                // Clean auto-sync pair: nothing changed on either side, so a full
+                // walk would be a no-op. Reset its timer and skip it.
+                db.markSynced(p.id);
+            }
+            // else: clean real-time pair - just wait for the next tick.
+        }
+
+        // Run the syncs, tracking that every one completed cleanly. If any did
+        // not (error, abort, tripwire, or an early break), keep the saved event
+        // ID so the replayed events are re-processed next tick.
+        lastSyncErrored = false;
+        let allSynced = true;
+        for (const id of toSync) {
+            if (syncing || paused) {
+                allSynced = false;
+                break;
+            }
+            const started = await runSync(id);
+            if (!started || lastSyncErrored) {
+                allSynced = false;
+                break;
             }
         }
 
-        for (const id of toSync) {
-            if (syncing || paused) break;
-            const started = await runSync(id);
-            if (!started) break;
+        // Persist the processed event ID only after every triggered sync ran
+        // cleanly (or there were no syncs to run).
+        if (allSynced && scope !== null && processedId !== null && processedId !== savedId) {
+            db.setSetting(lastEventIdKey(scope), processedId);
         }
     } finally {
         db.close();

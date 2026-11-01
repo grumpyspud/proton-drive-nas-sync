@@ -124,28 +124,36 @@ Replace `setInterval(schedulerTick, 60_000)` with a loop at
 `PDN_REALTIME_INTERVAL`. Each tick:
 
 1. Guard on `syncing || paused || pendingDeletion` (same as today).
-2. If no pair has `realTime` set, skip the whole tick (no feed polling).
+2. Build the watched set = every `realTime` pair, plus every `autoSync` pair
+   whose `intervalSeconds` elapsed. If empty, skip the tick.
 3. Poll the feed (1.1/1.2). Track `driveDirty`, `treeRefresh`, `fastForward`.
-4. If `!driveDirty`, stat-scan each real-time pair: walk local, compare
-   `(size, mtime)` against `db.nodes`; any new/missing/differing path sets
-   `localDirty`.
+4. For each watched pair, decide dirty:
+   - `driveDirty || treeRefresh || fastForward` -> dirty (full `syncOnce()`).
+   - else stat-scan local: compare `(size, mtime)` against `db.nodes`; any
+     new/missing/differing path -> dirty.
 5. Run sync:
-   - `treeRefresh || fastForward || first sync` -> full `syncOnce()`.
-   - `driveDirty || localDirty` -> full `syncOnce()` (Phase 1; Phase 2 makes
-     this a delta).
-   - idle -> nothing.
-6. After any sync, advance `lastEventId` to latest (see 1.4).
+   - dirty -> full `syncOnce()` (Phase 1; Phase 2 makes this a delta).
+   - clean `autoSync` pair -> `markSynced()` (reset its timer; a full walk
+     would be a no-op, so it is skipped until the interval elapses again).
+   - clean `realTime` pair -> nothing (re-checked next tick).
+6. Advance `lastEventId` to the drained max ID only after every triggered sync
+   ran cleanly (no error / abort / tripwire). On any failure keep the old ID so
+   the replayed events are re-processed next tick.
 
-`autoSync` pairs keep their existing scheduled full walk, untouched.
+`autoSync` pairs therefore also ride the feed + local scan before their
+scheduled full walk, and an idle due sync is skipped (user sign-off #3).
 
-### 1.4 Self-write suppression
+### 1.4 Self-write handling
 
-Our own uploads/deletes generate Drive events. To avoid reacting to them next
-tick, advance `lastEventId` to the current latest after a sync that performed
-writes. Mechanism: call `iterateEvents(volumeId)` with no `lastEventId`, which
-yields one `FastForward` carrying the latest ID; save that. No verification
-round-trip - the upload API already returns the new node, and the DB fingerprint
-is updated from that response.
+Our own uploads/deletes generate Drive events, so the next tick re-drains them,
+marks the just-written nodes stale, and runs one extra (no-op) full walk that
+the existing fingerprint logic resolves as unchanged - no echo loop. We advance
+`lastEventId` to the DRAINED max ID (not to "latest") and only after a clean
+sync: jumping to "latest" via a `FastForward` probe would skip any external
+event that landed mid-sync without marking its node stale, so the drained-max
+approach is deliberately kept as the safe option. No verification round-trip -
+the upload API already returns the new node, and the DB fingerprint is updated
+from that response.
 
 ### 1.5 Deletion guard (unchanged)
 
@@ -202,13 +210,14 @@ and is validated first.
 - **Coarse pair granularity in Phase 1**: a Drive event does not map to a pair
   without Phase 2 path mapping, so any Drive change triggers sync for all
   real-time pairs. Correct but not minimal; Phase 2 resolves it.
-- **Self-write loops**: suppressed by advancing `lastEventId` after writes (1.4).
-  Downloads are read-only and generate no Drive events.
+- **Self-write echo**: no loop - drained-max advance plus the existing
+  fingerprint match resolves our own uploads as unchanged (1.4). Downloads are
+  read-only and generate no Drive events.
 
-## Open questions
+## Resolved decisions (user sign-off)
 
-1. `PDN_REALTIME_INTERVAL` default 30s / clamp 10-60s - confirm.
-2. Confirm `real_time` now means "participates in the fast loop" and that the
-   old 60s full-walk scheduler is fully replaced (autoSync interval pairs remain).
-3. Any desire to also drive `autoSync` pairs from the feed (their full walk would
-   become warm), or keep autoSync exactly as-is for now?
+1. `PDN_REALTIME_INTERVAL` default 30s, clamp 10-60s - confirmed.
+2. `real_time` now means "participates in the fast loop"; the old 60s full-walk
+   scheduler is fully replaced.
+3. `autoSync` pairs also ride the feed + local scan before their full walk, and
+   an idle due sync is skipped.
