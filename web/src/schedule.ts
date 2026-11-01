@@ -32,3 +32,12 @@ export function pairInterval(p: { autoSync: boolean; intervalSeconds: number; re
     if (p.realTime) return 60;
     return null;
 }
+
+/** Epoch ms when the pair next becomes due for an auto-sync, or null when it
+ *  never auto-syncs (Manual). A pair that has never synced is due immediately,
+ *  so it falls in the past and the UI shows "under a minute". */
+export function nextSyncAtMs(p: { autoSync: boolean; intervalSeconds: number; realTime: boolean; lastSyncAt: number | null }): number | null {
+    const interval = pairInterval(p);
+    if (interval === null) return null;
+    return (p.lastSyncAt ?? 0) + interval * 1000;
+}

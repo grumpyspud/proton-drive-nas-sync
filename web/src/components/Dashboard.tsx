@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getConflicts, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listPairs, listTrash, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
 import type { DeletionHold, ErrorLogStatus, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
-import { formatBytes, formatSpeed } from '../format';
+import { formatBytes, formatDate, formatDurationHMS, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { LogsModal } from './LogsModal';
 import { ErrorLogModal } from './ErrorLogModal';
@@ -11,7 +11,7 @@ import { ConflictsModal } from './ConflictsModal';
 import { CreatePairModal } from './CreatePairModal';
 import { ActivityLogModal } from './ActivityLogModal';
 import { SignOutModal } from './SignOutModal';
-import { SYNC_FREQUENCIES, frequencyLabel, pairInterval } from '../schedule';
+import { SYNC_FREQUENCIES, frequencyLabel, nextSyncAtMs, pairInterval } from '../schedule';
 
 const MAX_LOG = 200;
 
@@ -59,6 +59,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [errorLogStatus, setErrorLogStatus] = useState<ErrorLogStatus | null>(null);
     const [openMenu, setOpenMenu] = useState<'logs' | 'settings' | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
+    const [now, setNow] = useState(() => Date.now());
 
     const reload = useCallback(async () => {
         try {
@@ -147,6 +148,12 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         const t = setInterval(() => void loadErrorStatus(), 15000);
         return () => clearInterval(t);
     }, [loadErrorStatus]);
+
+    // Tick once a second to drive the per-pair "next sync" countdown timers.
+    useEffect(() => {
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
 
     const hasUnseenErrors = (errorLogStatus?.unseenErrors ?? 0) > 0;
     const hasUnseenWarnings = ((errorLogStatus?.unseenConflicts ?? 0) + (errorLogStatus?.unseenWarnings ?? 0)) > 0;
@@ -267,6 +274,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     setSummary(ev.summary);
                     setActive(new Map());
                     setOverall(null);
+                    void reload();
                     void loadStorage();
                     void loadLocalStorage();
                     void loadErrorStatus();
@@ -581,6 +589,9 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                         <ul className="pair-list">
                             {pairs.map((p) => {
                                 const interval = pairInterval(p);
+                                const lastSyncLabel = p.lastSyncAt ? formatDate(p.lastSyncAt) : 'Never';
+                                const nextMs = nextSyncAtMs(p);
+                                const nextSyncLabel = nextMs === null ? 'Manual' : nextMs > now ? `~${formatDurationHMS(nextMs - now)}` : '~< 1 min';
                                 return (
                                     <li key={p.id} className="pair">
                                         <div className="pair-main">
@@ -603,6 +614,15 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                                 <button className="btn btn-ghost btn-sm" onClick={() => onRemove(p.id)}>
                                                     Remove
                                                 </button>
+                                            </div>
+                                        </div>
+                                        <div className="pair-sync-info">
+                                            <div className="pair-sync-line">
+                                                <span className="pair-sync-label">Last sync:</span> {lastSyncLabel}
+                                            </div>
+                                            <div className="pair-sync-line">
+                                                <span className="pair-sync-label">Next sync:</span>{' '}
+                                                <span className="pair-sync-timer">{nextSyncLabel}</span>
                                             </div>
                                         </div>
                                         <div className="pair-settings">

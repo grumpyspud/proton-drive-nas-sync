@@ -20,6 +20,16 @@ export function formatDate(ms: number): string {
     });
 }
 
+/** Formats a duration (ms) as a fixed-width HH:MM:SS countdown, e.g. 06:00:00. */
+export function formatDurationHMS(ms: number): string {
+    const totalSec = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
 export function formatSpeed(bps: number): string {
     if (!bps || bps < 0) return '~';
     const units = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
