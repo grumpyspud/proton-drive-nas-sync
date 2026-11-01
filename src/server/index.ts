@@ -7,6 +7,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configDir, loadMasterKey } from '../crypto/keySource';
+import { CACHE_DIR } from '../config';
 import { listLocalDir, mkdirLocal } from '../fs/browse';
 import { resolveTls, type TlsConfig } from './tls';
 import { findFolder, findOrCreateFolderPath } from '../fs/folders';
@@ -511,8 +512,19 @@ function unescapeMountField(s: string): string {
     return s.replace(/\\([0-7]{3})/g, (_, oct: string) => String.fromCharCode(parseInt(oct, 8)));
 }
 
+/**
+ * The disk-cache directory (PDN_CACHE_DIR, else <configDir>/cache). It is
+ * app-owned, not user NAS data, so it must never surface as a storage volume
+ * nor be usable as the local side of a sync pair.
+ */
+function cacheDirPath(): string {
+    return CACHE_DIR !== '' ? CACHE_DIR : path.join(configDir(), 'cache');
+}
+
 function isSystemMountPoint(mp: string): boolean {
     if (mp === '/' || mp === '/config') return true;
+    const cacheDir = cacheDirPath();
+    if (mp === cacheDir || mp.startsWith(`${cacheDir}${path.sep}`)) return true;
     return SYSTEM_MOUNT_PREFIXES.some((p) => mp === p || mp.startsWith(`${p}/`));
 }
 
@@ -558,6 +570,8 @@ function dataMountPaths(): string[] {
 function isSafeLocalPath(input: string): boolean {
     if (!input) return false;
     const abs = path.resolve(input);
+    const cacheDir = path.resolve(cacheDirPath());
+    if (abs === cacheDir || abs.startsWith(`${cacheDir}${path.sep}`)) return false;
     return dataMountPaths().some((vol) => {
         const v = path.resolve(vol);
         return abs === v || abs.startsWith(`${v}${path.sep}`);
