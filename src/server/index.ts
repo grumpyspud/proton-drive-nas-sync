@@ -7,7 +7,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configDir, loadMasterKey } from '../crypto/keySource';
-import { CACHE_DIR } from '../config';
+import { CACHE_DIR, REALTIME_INTERVAL_SECONDS } from '../config';
 import { listLocalDir, mkdirLocal } from '../fs/browse';
 import { resolveTls, type TlsConfig } from './tls';
 import { findFolder, findOrCreateFolderPath } from '../fs/folders';
@@ -15,6 +15,8 @@ import { nodeName } from '../fs/files';
 import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
 import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce, SyncAbortedError, DEFAULT_TRANSFER_CONCURRENCY, MAX_TRANSFER_CONCURRENCY } from '../engine/sync';
+import { walkLocalTree } from '../engine/walk';
+import { pollEvents } from '../proton/events';
 import { DeletionTripwireError } from '../engine/safety';
 import { recycleDuplicates, scanDuplicates } from '../engine/duplicates';
 import { resolveConflictKeep } from '../engine/conflicts';
@@ -1330,16 +1332,52 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({ error: (err as Error).message ?? 'Internal error' });
 });
 
-// ---- background scheduler: real-time (fixed 60s poll) + auto-sync (interval) ----
-const REAL_TIME_INTERVAL_MS = 60_000;
+// ---- background scheduler: check-then-sync loop ----
+//
+// Every REALTIME_INTERVAL_SECONDS we LOOK (not necessarily sync):
+//   1. poll the Drive event feed once (volume-level, covers all real-time pairs),
+//   2. stat-scan each real-time pair's local dir for new/modified/missing files,
+//   3. sync only the pairs that show a change, plus any auto-sync pair whose
+//      interval has elapsed.
+// The full three-way walk remains the fallback for tree_refresh / fast_forward
+// and first sync: those are surfaced as "sync now", and runSync() already does
+// the full walk.
 
-function duePairs(db: SyncDB): Pair[] {
+function lastEventIdKey(treeEventScopeId: string): string {
+    return `lastEventId:${treeEventScopeId}`;
+}
+
+/** Auto-sync pairs whose interval has elapsed since their last completed sync. */
+function dueAutoSyncPairs(db: SyncDB): Pair[] {
     const now = Date.now();
-    return db.listPairs().filter((p) => {
-        if (p.realTime) return true;
-        if (p.autoSync && p.intervalSeconds > 0) return now - (p.lastSyncAt ?? 0) >= p.intervalSeconds * 1000;
-        return false;
-    });
+    return db.listPairs().filter(
+        (p) => p.autoSync && p.intervalSeconds > 0 && now - (p.lastSyncAt ?? 0) >= p.intervalSeconds * 1000,
+    );
+}
+
+/**
+ * Cheap local change detection: stat-scan the pair's local dir and compare file
+ * mtime/size and folder presence against the last-synced state in sync.db. No
+ * hashing. Returns true when anything is new, modified, or missing. Folders are
+ * matched by presence only (their mtime changes on any child change, which the
+ * file-level checks already capture).
+ */
+async function localDirty(db: SyncDB, pair: Pair): Promise<boolean> {
+    const stored = await db.allNodesAsync(pair.id);
+    const storedByRel = new Map(stored.map((n) => [n.relPath, n]));
+    const local = await walkLocalTree(pair.localDir);
+    const localByRel = new Set<string>();
+    for (const e of local) {
+        localByRel.add(e.relPath);
+        const s = storedByRel.get(e.relPath);
+        if (!s) return true; // new on disk
+        if (s.kind !== e.kind) return true; // file <-> folder switch
+        if (e.kind === 'file' && (s.localSize !== e.size || s.localMtime !== e.mtimeMs)) return true;
+    }
+    for (const rel of storedByRel.keys()) {
+        if (!localByRel.has(rel)) return true; // deleted locally
+    }
+    return false;
 }
 
 async function schedulerTick(): Promise<void> {
@@ -1355,24 +1393,71 @@ async function schedulerTick(): Promise<void> {
         if (!resumed) return;
     }
 
-    const ids: string[] = [];
-    {
-        const db = new SyncDB(syncDbPath());
-        try {
-            for (const p of duePairs(db)) ids.push(p.id);
-        } finally {
-            db.close();
+    const db = new SyncDB(syncDbPath());
+    try {
+        const all = db.listPairs();
+        const rtPairs = all.filter((p) => p.realTime);
+        const autoPairs = dueAutoSyncPairs(db);
+
+        // Nothing real-time and nothing scheduled: skip the whole tick.
+        if (rtPairs.length === 0 && autoPairs.length === 0) return;
+
+        const toSync = new Set<string>(autoPairs.map((p) => p.id));
+
+        // Drive-side check: poll the event feed once (all pairs share the one
+        // "My Files" scope). Persist the highest processed ID so events are not
+        // replayed. A tree_refresh / fast_forward is a full-refresh signal.
+        let driveChanged = false;
+        if (rtPairs.length > 0) {
+            try {
+                const sdk = authService.getSession().sdk;
+                const root = await sdk.getMyFilesRootFolder();
+                const scope = root.treeEventScopeId;
+                const savedId = db.getSetting(lastEventIdKey(scope));
+                const res = await pollEvents(sdk, scope, savedId);
+                if (res.lastEventId !== null && res.lastEventId !== savedId) {
+                    db.setSetting(lastEventIdKey(scope), res.lastEventId);
+                }
+                driveChanged = res.driveChanged || res.treeRefresh || res.fastForward;
+            } catch (error) {
+                // Event-feed failure is non-fatal: scheduled auto-sync still runs.
+                // Real-time pairs are retried on the next tick.
+                logger.warn(`Event feed poll failed: ${(error as Error).message ?? error}`);
+            }
         }
-    }
-    for (const id of ids) {
-        const started = await runSync(id);
-        if (!started) break;
+
+        // Local-side check: stat-scan each real-time pair. In Phase 1 we do not
+        // map Drive events to pairs, so any Drive change syncs every real-time
+        // pair; only when the Drive side is clean do we consult the local scan.
+        for (const p of rtPairs) {
+            if (driveChanged) {
+                toSync.add(p.id);
+                continue;
+            }
+            try {
+                if (await localDirty(db, p)) toSync.add(p.id);
+            } catch (error) {
+                // A missing/erroring local dir is a real problem the full sync
+                // surfaces properly (assertSourceAvailable); trigger it instead of
+                // silently skipping the pair.
+                logger.warn(`Local scan failed for pair ${p.id}: ${(error as Error).message ?? error}`);
+                toSync.add(p.id);
+            }
+        }
+
+        for (const id of toSync) {
+            if (syncing || paused) break;
+            const started = await runSync(id);
+            if (!started) break;
+        }
+    } finally {
+        db.close();
     }
 }
 
 setInterval(() => {
     void schedulerTick();
-}, REAL_TIME_INTERVAL_MS);
+}, REALTIME_INTERVAL_SECONDS * 1000);
 
 const PORT = parseInt(process.env.PDN_PORT ?? '8787', 10);
 void (async () => {

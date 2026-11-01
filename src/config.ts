@@ -28,3 +28,15 @@ export const CACHE_LRU_MAX = Number.parseInt(process.env.PDN_CACHE_LRU_MAX ?? '1
  * Defaults to `<configDir>/cache` when unset. Mount fast storage (NVMe) here.
  */
 export const CACHE_DIR = (process.env.PDN_CACHE_DIR ?? '').trim();
+
+/**
+ * Real-time (check-then-sync) poll interval in seconds: how often the server
+ * polls the Drive event feed and stat-scans local dirs to decide whether to
+ * sync. Default 30; clamped to [10, 60]. Values below 10 become 10 (Proton
+ * rate-limit + NAS I/O guard), values above 60 become 60 (past that it is no
+ * longer "real-time", it is the scheduled auto-sync).
+ */
+const REALTIME_INTERVAL_RAW = Number.parseInt(process.env.PDN_REALTIME_INTERVAL ?? '30', 10);
+export const REALTIME_INTERVAL_SECONDS = Number.isFinite(REALTIME_INTERVAL_RAW)
+    ? Math.min(60, Math.max(10, REALTIME_INTERVAL_RAW))
+    : 30;
