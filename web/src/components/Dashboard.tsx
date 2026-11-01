@@ -552,6 +552,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                 <div className="summary-grid">
                                     <Stat label="Uploaded" value={summary.uploaded} />
                                     <Stat label="Downloaded" value={summary.downloaded} />
+                                    <Stat label="Moved" value={summary.moved} />
                                     <Stat label="Skipped" value={summary.skipped} />
                                     <Stat label="Failed" value={summary.failed} />
                                     <Stat label="Conflicts" value={summary.conflicts} />

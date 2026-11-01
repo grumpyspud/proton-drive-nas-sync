@@ -1,0 +1,171 @@
+import path from 'node:path';
+import { mkdir, rename } from 'node:fs/promises';
+import { sha1OfFile } from '../fs/files';
+import type { SyncNode } from '../state/syncDb';
+import type { LocalDiff } from './localDiff';
+import type { SyncTarget } from './mapping';
+import type { ReconcileContext } from './reconcile';
+import { driveFingerprint, statLocalEntry, type LocalEntry } from './walk';
+
+/** Result of resolving moves: the targets and local diff that still need the
+ *  general reconcile, after any cheap move/rename has been applied. */
+export interface ResolvedMoves {
+    targets: SyncTarget[];
+    localDiff: LocalDiff;
+}
+
+type DriveMoveOutcome = 'moved' | 'fallback' | 'fullwalk';
+type LocalMoveOutcome = 'moved' | 'fallback';
+
+/**
+ * Resolve moves/renames as cheap metadata operations before the general
+ * reconcile, so a rename is a local + Drive rename plus a sync.db relPath
+ * update instead of a delete + full re-transfer.
+ *
+ * Drive-side moves arrive as `moved` targets (the event mapper detected a
+ * within-pair file move); the local file is renamed to match. Local-side moves
+ * are a `removed` + `added` pair with identical content (matched by size+mtime
+ * and verified by SHA-1); the Drive node is renamed/moved to match.
+ *
+ * Returns null when a Drive-side move cannot be resolved surgically (its
+ * `getNode` failed), signalling the caller to fall back to the full walk.
+ * Any move that cannot be applied cleanly is left in the result so the normal
+ * delete + create/upload path handles it.
+ */
+export async function resolveMoves(ctx: ReconcileContext, targets: SyncTarget[], localDiff: LocalDiff): Promise<ResolvedMoves | null> {
+    const remainingTargets: SyncTarget[] = [];
+
+    // 1. Drive-side moves (event-driven, unambiguous).
+    for (const t of targets) {
+        if (t.op !== 'moved' || t.oldRelPath == null || t.relPath == null) {
+            remainingTargets.push(t);
+            continue;
+        }
+        const outcome = await applyDriveMove(ctx, t);
+        if (outcome === 'fullwalk') return null;
+        if (outcome === 'fallback') {
+            remainingTargets.push({ ...t, op: 'deleted', relPath: t.oldRelPath });
+            remainingTargets.push({ ...t, op: 'created', relPath: t.relPath });
+        }
+        // 'moved': consumed.
+    }
+
+    // 2. Local-side moves: match a removed node to an added entry with the same
+    //    size + mtime, then verify content by SHA-1 before renaming on Drive.
+    const consumedRemoved = new Set<number>();
+    const consumedAdded = new Set<number>();
+    for (const [i, r] of localDiff.removed.entries()) {
+        if (r.kind !== 'file') continue;
+        for (const [j, a] of localDiff.added.entries()) {
+            if (consumedAdded.has(j)) continue;
+            if (a.kind !== 'file') continue;
+            if (a.size !== r.localSize || a.mtimeMs !== r.localMtime) continue;
+            const outcome = await applyLocalMove(ctx, r, a);
+            if (outcome === 'moved') {
+                consumedRemoved.add(i);
+                consumedAdded.add(j);
+            }
+            break; // one match per removed node at most
+        }
+    }
+    const removedRemaining: SyncNode[] = [];
+    const addedRemaining: LocalEntry[] = [];
+    for (const [i, r] of localDiff.removed.entries()) if (!consumedRemoved.has(i)) removedRemaining.push(r);
+    for (const [j, a] of localDiff.added.entries()) if (!consumedAdded.has(j)) addedRemaining.push(a);
+
+    return {
+        targets: remainingTargets,
+        localDiff: { added: addedRemaining, modified: localDiff.modified, removed: removedRemaining },
+    };
+}
+
+/** Drive-side move: rename the (unchanged) local file oldRel -> newRel. */
+async function applyDriveMove(ctx: ReconcileContext, t: SyncTarget): Promise<DriveMoveOutcome> {
+    const oldRel = t.oldRelPath!;
+    const newRel = t.relPath!;
+
+    let node;
+    try {
+        node = await ctx.sdk.getNode(t.driveUid);
+    } catch {
+        return 'fullwalk';
+    }
+    const stored = ctx.db.getNode(ctx.pairId, oldRel);
+    if (!stored || stored.kind !== 'file') return 'fallback';
+
+    const localOld = await statLocalEntry(ctx.localDir, oldRel);
+    const localNew = await statLocalEntry(ctx.localDir, newRel);
+    const unchanged =
+        localOld != null &&
+        localOld.kind === 'file' &&
+        stored.localSize != null &&
+        stored.localMtime != null &&
+        localOld.size === stored.localSize &&
+        localOld.mtimeMs === stored.localMtime;
+
+    // Fall back when the local file changed (move+edit), or the destination is
+    // already occupied (would clobber). Those are the delete + re-transfer path.
+    if (!unchanged || localNew != null) return 'fallback';
+
+    try {
+        await mkdir(path.dirname(path.join(ctx.localDir, newRel)), { recursive: true });
+        await rename(path.join(ctx.localDir, oldRel), path.join(ctx.localDir, newRel));
+    } catch {
+        return 'fallback';
+    }
+
+    ctx.db.removeNode(ctx.pairId, oldRel);
+    ctx.db.upsertNode({
+        pairId: ctx.pairId,
+        relPath: newRel,
+        kind: 'file',
+        driveUid: t.driveUid,
+        driveFingerprint: driveFingerprint(node),
+        localSha1: stored.localSha1,
+        localSize: stored.localSize,
+        localMtime: stored.localMtime,
+    });
+    ctx.result.moved++;
+    ctx.onProgress?.({ type: 'item', action: 'move', relPath: newRel, message: `moved from ${oldRel}` });
+    return 'moved';
+}
+
+/** Local-side move: rename/move the Drive node to match the new local path. */
+async function applyLocalMove(ctx: ReconcileContext, removedNode: SyncNode, addedEntry: LocalEntry): Promise<LocalMoveOutcome> {
+    const oldRel = removedNode.relPath;
+    const newRel = addedEntry.relPath;
+    if (!removedNode.driveUid || !removedNode.localSha1) return 'fallback';
+
+    // Verify the "added" file is byte-identical to the removed one before
+    // renaming on Drive; a same-size + same-mtime coincidence must not turn a
+    // copy into a rename.
+    let addedSha1: string;
+    try {
+        addedSha1 = await sha1OfFile(addedEntry.absPath);
+    } catch {
+        return 'fallback';
+    }
+    if (addedSha1 !== removedNode.localSha1) return 'fallback';
+
+    const oldParent = path.posix.dirname(oldRel);
+    const newParent = path.posix.dirname(newRel);
+    try {
+        if (oldParent === newParent) {
+            await ctx.sdk.renameNode(removedNode.driveUid, path.posix.basename(newRel));
+        } else {
+            const parentUid = newParent === '.' ? ctx.driveFolderUid : ctx.db.getNode(ctx.pairId, newParent)?.driveUid;
+            if (!parentUid) return 'fallback'; // new parent not on Drive yet
+            for await (const r of ctx.sdk.moveNodes([removedNode.driveUid], parentUid)) {
+                if (!r.ok) throw r.error;
+            }
+        }
+    } catch {
+        return 'fallback';
+    }
+
+    ctx.db.removeNode(ctx.pairId, oldRel);
+    ctx.db.upsertNode({ ...removedNode, relPath: newRel, localSize: addedEntry.size, localMtime: addedEntry.mtimeMs });
+    ctx.result.moved++;
+    ctx.onProgress?.({ type: 'item', action: 'move', relPath: newRel, message: `moved from ${oldRel} (Drive rename)` });
+    return 'moved';
+}

@@ -271,6 +271,14 @@ export class SyncDB {
         return row.n;
     }
 
+    /** Count a folder's whole subtree (itself + every descendant node). */
+    countSubtree(pairId: string, relPath: string): number {
+        const row = this.db
+            .prepare('SELECT COUNT(*) AS n FROM nodes WHERE pair_id = ? AND (rel_path = ? OR rel_path LIKE ?)')
+            .get(pairId, relPath, `${relPath}/%`) as unknown as { n: number };
+        return row.n;
+    }
+
     upsertNode(node: SyncNode): void {
         this.db
             .prepare(

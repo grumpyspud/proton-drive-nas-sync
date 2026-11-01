@@ -8,7 +8,9 @@ import type { NodeEventInfo } from '../proton/events';
 export interface SyncTarget {
     pairId: string;
     relPath: string | null;
-    op: 'created' | 'updated' | 'deleted';
+    /** For `moved`: the node's previous relPath (same pair). */
+    oldRelPath?: string | null;
+    op: 'created' | 'updated' | 'deleted' | 'moved';
     driveUid: string;
     kind: 'file' | 'folder' | null;
 }
@@ -118,7 +120,13 @@ export async function mapEventsToTargets(
         if (known && resolved) {
             if (known.pairId === resolved.pairId && known.relPath === resolved.relPath) {
                 targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'updated', driveUid: ev.nodeUid, kind: known.kind });
+            } else if (known.pairId === resolved.pairId && known.kind === 'file') {
+                // Within-pair file move/rename: a cheap rename instead of a
+                // delete + re-download. Folder moves stay delete+create (M4
+                // scopes to file moves; folder subtree moves are a later op).
+                targets.push({ pairId: known.pairId, relPath: resolved.relPath, oldRelPath: known.relPath, op: 'moved', driveUid: ev.nodeUid, kind: 'file' });
             } else {
+                // Cross-pair move, or a folder move: delete old + create new.
                 targets.push({ pairId: known.pairId, relPath: known.relPath, op: 'deleted', driveUid: ev.nodeUid, kind: known.kind });
                 targets.push({ pairId: resolved.pairId, relPath: resolved.relPath, op: 'created', driveUid: ev.nodeUid, kind: resolved.kind });
             }

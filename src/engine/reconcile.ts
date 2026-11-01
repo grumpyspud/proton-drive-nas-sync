@@ -20,6 +20,7 @@ export interface SyncResult {
     conflicts: number;
     skipped: number;
     failed: number;
+    moved: number;
 }
 
 /** Thrown when a pause/stop is requested mid-cycle. */
@@ -105,7 +106,7 @@ export class ReconcileContext {
     readonly pendingConflictRelPaths = new Set<string>();
     readonly deletedFolderPrefixes = new Set<string>();
 
-    readonly result: SyncResult = { uploaded: 0, downloaded: 0, localRecycled: 0, driveTrashed: 0, conflicts: 0, skipped: 0, failed: 0 };
+    readonly result: SyncResult = { uploaded: 0, downloaded: 0, localRecycled: 0, driveTrashed: 0, conflicts: 0, skipped: 0, failed: 0, moved: 0 };
 
     readonly driveDeletions: DriveDeletion[] = [];
     readonly localDeletions: LocalDeletion[] = [];
@@ -239,6 +240,13 @@ export class ReconcileContext {
             if (relPath === p || relPath.startsWith(`${p}/`)) return true;
         }
         return false;
+    }
+
+    /** Deletion size of a relPath: 1 for a file, whole subtree for a folder. */
+    deletionSize(relPath: string): number {
+        const node = this.db.getNode(this.pairId, relPath);
+        if (!node || node.kind !== 'folder') return 1;
+        return this.db.countSubtree(this.pairId, relPath);
     }
 }
 
@@ -468,7 +476,11 @@ export async function reconcileFile(ctx: ReconcileContext, relPath: string): Pro
  * delete.
  */
 export async function runDeletionBarrier(ctx: ReconcileContext): Promise<void> {
-    const totalDeletions = ctx.driveDeletions.length + ctx.localDeletions.length;
+    // Subtree-weighted: a folder deletion counts its whole subtree, so a mass
+    // folder delete can't slip under the tripwire as a single deletion.
+    let totalDeletions = 0;
+    for (const d of ctx.driveDeletions) totalDeletions += ctx.deletionSize(d.relPath);
+    for (const d of ctx.localDeletions) totalDeletions += ctx.deletionSize(d.relPath);
     ctx.checkAbort();
     if (totalDeletions > 0) {
         const trip = checkDeletionTripwire({ totalTracked: ctx.totalTracked, deletions: totalDeletions, thresholdPct: ctx.deletionThresholdPct });

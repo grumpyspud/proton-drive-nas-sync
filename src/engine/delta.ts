@@ -14,6 +14,7 @@ import {
 } from './reconcile';
 import type { SyncResult } from './reconcile';
 import { driveFingerprint, statLocalEntry } from './walk';
+import { resolveMoves } from './moves';
 
 export interface SyncDeltaOptions {
     sdk: ProtonDriveClient;
@@ -84,6 +85,12 @@ export async function syncDelta(options: SyncDeltaOptions): Promise<SyncResult |
     // 1. Source-availability gate (same safety net as the full walk).
     await assertSourceAvailable(localDir);
 
+    // 1b. Resolve moves/renames as cheap renames first (M4), so the general
+    //     reconcile never sees a "deleted old + created new" pair and re-transfers.
+    const resolved = await resolveMoves(ctx, targets, localDiff);
+    if (resolved === null) return null; // Drive-side move unresolved - full walk
+    const { targets: effTargets, localDiff: effLocalDiff } = resolved;
+
     // 2. Collect affected relPaths and close them under ancestors so every
     //    targeted file/folder has its parent folders present for reconcile
     //    (parent UIDs are needed to create/upload into subfolders).
@@ -97,15 +104,15 @@ export async function syncDelta(options: SyncDeltaOptions): Promise<SyncResult |
             p = parent;
         }
     };
-    for (const t of targets) if (t.relPath !== null) addWithAncestors(t.relPath);
-    for (const e of localDiff.added) addWithAncestors(e.relPath);
-    for (const e of localDiff.modified) addWithAncestors(e.relPath);
-    for (const n of localDiff.removed) addWithAncestors(n.relPath);
+    for (const t of effTargets) if (t.relPath !== null) addWithAncestors(t.relPath);
+    for (const e of effLocalDiff.added) addWithAncestors(e.relPath);
+    for (const e of effLocalDiff.modified) addWithAncestors(e.relPath);
+    for (const n of effLocalDiff.removed) addWithAncestors(n.relPath);
 
     // 3. Local side: seed from the diff (already has stat data), then stat any
     //    remaining affected relPath (Drive-targeted nodes and ancestors).
-    for (const e of localDiff.added) ctx.localByRel.set(e.relPath, e);
-    for (const e of localDiff.modified) ctx.localByRel.set(e.relPath, e);
+    for (const e of effLocalDiff.added) ctx.localByRel.set(e.relPath, e);
+    for (const e of effLocalDiff.modified) ctx.localByRel.set(e.relPath, e);
     for (const relPath of affected) {
         if (ctx.localByRel.has(relPath)) continue;
         const le = await statLocalEntry(localDir, relPath);
@@ -116,7 +123,7 @@ export async function syncDelta(options: SyncDeltaOptions): Promise<SyncResult |
     //    deleted targets are absent (nothing to fetch). Then backfill any affected
     //    relPath that has a stored node with a known driveUid, so local changes
     //    resolve their Drive side from sync.db without an API call.
-    for (const t of targets) {
+    for (const t of effTargets) {
         if (t.relPath === null) continue;
         if (t.op === 'deleted') continue;
         let node;

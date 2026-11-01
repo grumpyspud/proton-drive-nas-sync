@@ -12,6 +12,7 @@ export interface SyncSummary {
     conflicts: number;
     skipped: number;
     failed: number;
+    moved: number;
 }
 
 export type SyncAction =
@@ -24,7 +25,8 @@ export type SyncAction =
     | 'cleanup-partial'
     | 'conflict'
     | 'mkdir-drive'
-    | 'mkdir-local';
+    | 'mkdir-local'
+    | 'move';
 
 export type SyncProgressEvent =
     | { type: 'sync-start'; pairId: string; localDir: string; driveFolderName: string }

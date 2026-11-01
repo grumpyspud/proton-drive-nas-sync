@@ -18,7 +18,7 @@ function lineFor(event: SyncProgressEvent): string | null {
         case 'log':
             return event.message;
         case 'sync-complete':
-            return `[sync-complete] uploaded=${event.summary.uploaded} downloaded=${event.summary.downloaded} skipped=${event.summary.skipped} failed=${event.summary.failed} conflicts=${event.summary.conflicts} driveTrashed=${event.summary.driveTrashed} localRecycled=${event.summary.localRecycled}`;
+            return `[sync-complete] uploaded=${event.summary.uploaded} downloaded=${event.summary.downloaded} skipped=${event.summary.skipped} failed=${event.summary.failed} conflicts=${event.summary.conflicts} moved=${event.summary.moved} driveTrashed=${event.summary.driveTrashed} localRecycled=${event.summary.localRecycled}`;
         case 'sync-error':
             return `[sync-error] ${event.message}`;
         case 'sync-paused':
