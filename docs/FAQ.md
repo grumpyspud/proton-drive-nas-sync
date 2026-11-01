@@ -132,7 +132,7 @@ change. The SDK's changelog is the trigger that tells us the swap is due.
 
 ## How does the sync engine work?
 
-Each folder pair is a three-way reconcile, run continuously in real time:
+Each folder pair is a three-way reconcile, run continuously in "real time":
 
 1. **Walk** both trees: the local NAS folder and the Proton Drive folder ~
    using the SDK's listing calls.
@@ -212,10 +212,10 @@ stable real-world rate.
 
 Be aware of these before relying on it:
 
-- **Beta.** Milestones M0–M6 are complete and it's in daily use, but treat it as
+- **Beta.** Most milestones are complete and it's in daily use, but treat it as
   beta: test against a throwaway Proton account first.
-- **Poll-based real time.** There is no push/webhook from Proton, so sync polls
-  the event feed and local folders every ~30 seconds - near real time, not
+- **Poll-based "real time".** There is no push/webhook from Proton, so sync polls
+  the event feed and local folders every ~30 seconds - near "real time", not
   instant.
 - **Whole-file transfer.** A changed file is re-transferred in full: there is
   no block-level (rsync-style) delta.

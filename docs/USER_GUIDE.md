@@ -58,9 +58,9 @@ the other).
 
 ![Create sync pair](screenshots/07-add-pair-folder-picker.png)
 
-### Real-time sync
+### "Real-time" sync
 
-Every pair syncs in real time. The engine watches the Proton Drive event feed and
+Every pair syncs in "real time". The engine watches the Proton Drive event feed and
 stat-scans the local folder on a short interval, mirroring additions, edits, and
 deletions as soon as they are detected. The **Sync** button on a pair runs an
 immediate sync on demand, and the top-bar **⏸ Pause** is the only "don't sync"

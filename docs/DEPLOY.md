@@ -79,7 +79,7 @@ services:
 
 1. Open the UI and sign in with your Proton account.
 2. **Create Sync Pair** (top bar): pick the local folder (absolute path under
-   `/data`) and a Proton Drive folder. The pair starts syncing in real time
+   `/data`) and a Proton Drive folder. The pair starts syncing in "real time"
    automatically - no schedule to set.
 3. Watch progress (files processed, bytes, network rate) in the dashboard.
 

@@ -152,7 +152,7 @@ This is your home base:
   space runs low.
 - **Right: Folder pairs:** the folders you're syncing, with per-pair Sync / Trash /
   Remove actions and a Dedupe Scan button. Every pair syncs automatically in
-  real time - there is no schedule to set.
+  "real time" - there is no schedule to set.
 
 The top bar holds the global controls:
 
@@ -181,7 +181,7 @@ folder on the NAS and the matching Proton Drive folder:
   to the container itself.
 - **Proton Drive folder**: pick an existing Drive folder, or **My Files (entire
   drive)** to sync the whole drive.
-Click **Create pair**. The pair starts syncing automatically in real time; the
+Click **Create pair**. The pair starts syncing automatically in "real time"; the
 **Sync** button on its row runs an immediate sync on demand.
 
 > **Deletion safety.** Deletions are trashed before being removed, and if a sync

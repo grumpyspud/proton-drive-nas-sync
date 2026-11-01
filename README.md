@@ -21,10 +21,10 @@ and Proton Drive.
 - **Deletion safety**: source-availability gate, a deletion-rate tripwire, and
   trash-before-delete (Drive `trashNodes` / local recycle) so a missing folder or
   drive can never wipe your data.
-- **Web UI**: Proton-style login (SRP + optional 2FA + optional mailbox
+- **Web UI**: Modern style login (SRP + optional 2FA + optional mailbox
   password), folder-pair manager, and a live sync dashboard with progress bars
   (files processed + bytes + network rate), storage usage, and low-space warnings.
-- **Real-time sync**: every pair syncs continuously - additions, edits, and
+- **"Real-time" sync**: every pair syncs continuously - additions, edits, and
   deletions on either side are mirrored automatically, with a manual **Sync**
   button for an immediate run.
 - **Duplicate-file scan**: find and recycle duplicate files within a pair, with a
@@ -76,7 +76,7 @@ that `@protontech/crypto` depends on).
 
 ## Status
 
-The feature set (auth, bidirectional sync, event-driven real-time sync,
+The feature set (auth, bidirectional sync, event-driven "real-time" sync,
 backup/restore, dedupe, Drive trash, and Docker packaging) is complete. Usable as a
 personal backup/sync tool; treat as beta, test against a throwaway Proton
 account first.
