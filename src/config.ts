@@ -4,24 +4,23 @@ export const SDK_VERSION = 'js@0.23.0';
 
 /**
  * Which cache backend the Drive SDK uses for its entity cache:
- *   `memory` (default) - unbounded in-memory cache,
- *   `null`             - cache disabled (every scan is cold),
- *   `lru`              - bounded least-recently-used cache (see CACHE_LRU_MAX),
- *   `disk`             - persistent disk-backed cache (see CACHE_DIR), with an
- *                        in-memory LRU front sized by CACHE_LRU_MAX (0 = none).
+ *   `disk` (default) - persistent disk-backed cache (see CACHE_DIR), with an
+ *                      in-memory LRU front sized by CACHE_LRU_MAX (0 = none).
+ *   `memory`         - unbounded in-memory cache,
+ *   `lru`            - bounded least-recently-used cache (see CACHE_LRU_MAX),
+ *   `null`           - cache disabled (every scan is cold).
  * The crypto cache stays in-memory in every mode except `null` (its values are
  * opaque crypto objects and it is small), so `disk` only persists entities.
  */
-export const CACHE_MODE = (process.env.PDN_CACHE ?? 'memory').trim().toLowerCase();
+export const CACHE_MODE = (process.env.PDN_CACHE ?? 'disk').trim().toLowerCase();
 
 /**
  * Max number of entries the LRU backend keeps (only used when CACHE_MODE is
- * `lru`). Drive entities average ~100 KB each, so 10_000 entries is roughly
- * 1 GB. Raise it on big-RAM hosts, lower it on constrained ones. When
- * CACHE_MODE is `disk`, this is the size of the in-memory LRU front (0 = skip
- * the front and read every entry straight from disk).
+ * `lru`), or the size of the in-memory LRU front when CACHE_MODE is `disk`
+ * (0 = skip the front and read every entry straight from disk). Keep this
+ * modest to bound RAM; raise it on big-RAM hosts, lower it on constrained ones.
  */
-export const CACHE_LRU_MAX = Number.parseInt(process.env.PDN_CACHE_LRU_MAX ?? '10000', 10);
+export const CACHE_LRU_MAX = Number.parseInt(process.env.PDN_CACHE_LRU_MAX ?? '2000', 10);
 
 /**
  * Directory for the disk-backed cache (only used when CACHE_MODE is `disk`).
@@ -49,3 +48,10 @@ export const REALTIME_INTERVAL_SECONDS = Number.isFinite(REALTIME_INTERVAL_RAW)
  * the instant-rollback switch.
  */
 export const DELTA_ENABLED = (process.env.PDN_DELTA ?? 'on').trim().toLowerCase() !== 'off';
+
+/**
+ * Whether to write per-file `[skip]` lines (unchanged files) to sync.log.
+ * Default OFF: skipping them keeps sync.log small and speeds up reconciles on
+ * large trees. Set to 'on' for full logging when troubleshooting.
+ */
+export const LOG_SKIPS = (process.env.PDN_LOG_SKIPS ?? 'off').trim().toLowerCase() === 'on';

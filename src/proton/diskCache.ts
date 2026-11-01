@@ -6,8 +6,8 @@ import type { EntityResult, ProtonDriveCache } from '@protontech/drive-sdk';
 /**
  * Persistent, disk-backed cache for the Drive SDK's entity cache.
  *
- * The SDK's default `MemoryCache` holds every fetched entity in RAM (~100 KB per
- * node, ~18 GB for a large tree). This cache instead writes each entity through
+ * The SDK's default `MemoryCache` holds every fetched entity in RAM, which on a
+ * large tree consumes many gigabytes. This cache instead writes each entity through
  * to a SQLite database on disk, so memory stays bounded and the cache survives a
  * container restart (no cold re-scan). A bounded in-memory LRU front (sized by
  * `maxEntries`) keeps hot entries in RAM for fast reads; `maxEntries` of 0 skips

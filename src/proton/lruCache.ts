@@ -4,9 +4,9 @@ import type { EntityResult, ProtonDriveCache } from '@protontech/drive-sdk';
  * Bounded, in-memory, least-recently-used cache.
  *
  * The SDK's default `MemoryCache` is unbounded, so on a large tree it grows to
- * hold every fetched entity (~100 KB per node) and can consume tens of GB of
- * RAM. This cache caps the number of entries instead: once the map exceeds
- * `maxEntries`, the least-recently-used entries are evicted so the process has a
+ * hold every fetched entity and can consume tens of GB of RAM. This cache caps
+ * the number of entries instead: once the map exceeds `maxEntries`, the
+ * least-recently-used entries are evicted so the process has a
  * predictable memory ceiling on smaller hosts.
  *
  * "Recently used" is tracked via a `Map` (insertion order == recency): a

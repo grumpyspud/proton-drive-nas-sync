@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { configDir } from '../crypto/keySource';
+import { LOG_SKIPS } from '../config';
 import type { SyncProgressEvent } from '../engine/progress';
 
 const MAX_BYTES = 20 * 1024 * 1024; // rotate (truncate oldest half) above 20 MiB
@@ -14,6 +15,7 @@ function lineFor(event: SyncProgressEvent): string | null {
         case 'sync-start':
             return `[sync-start] ${event.driveFolderName || '(root)'} local=${event.localDir}`;
         case 'item':
+            if (event.action === 'skip' && !LOG_SKIPS) return null;
             return `[${event.action}] ${event.relPath}`;
         case 'log':
             return event.message;

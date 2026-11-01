@@ -29,11 +29,11 @@ export interface ProtonSession {
 
 /**
  * Builds the entity-cache backend, selected by the `PDN_CACHE` env var:
- *   `memory` (default) - unbounded in-memory cache,
+ *   `disk` (default)   - persistent disk-backed cache under CACHE_DIR, with an
+ *                        in-memory LRU front sized by CACHE_LRU_MAX (0 = none),
+ *   `memory`           - unbounded in-memory cache,
  *   `null`             - cache disabled (every scan is cold),
- *   `lru`              - bounded least-recently-used cache (see CACHE_LRU_MAX),
- *   `disk`             - persistent disk-backed cache under CACHE_DIR, with an
- *                        in-memory LRU front sized by CACHE_LRU_MAX (0 = none).
+ *   `lru`              - bounded least-recently-used cache (see CACHE_LRU_MAX).
  */
 function makeEntitiesCache(): ProtonDriveCache<string> {
     switch (CACHE_MODE) {

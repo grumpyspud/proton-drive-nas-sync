@@ -102,18 +102,21 @@ are never written to disk. On restart the app resumes the session automatically.
 | `PDN_STATE_DB` | `<config>/sync.db` | Override the sync database path. |
 | `PDN_WEB_DIR` | `<app>/web/dist` | Override the static frontend directory. |
 | `PROTON_DRIVE_BASE_URL` | `drive-api.proton.me` | Custom API endpoint (rarely needed). |
-| `PDN_CACHE` | `memory` | Drive SDK entity-cache backend: `memory` (unbounded in-memory, default), `null` (disabled - every scan is cold), `lru` (bounded least-recently-used), or `disk` (persistent on-disk cache with an in-memory LRU front). |
-| `PDN_CACHE_LRU_MAX` | `10000` | Max entries for `lru`, or the size of the RAM front for `disk` (0 = none). Drive entities average ~100 KB each, so 10,000 ≈ 1 GB; raise on big-RAM hosts, lower on constrained ones. |
+| `PDN_CACHE` | `disk` | Drive SDK entity-cache backend: `disk` (persistent on-disk cache with an in-memory LRU front, default), `memory` (unbounded in-memory), `lru` (bounded least-recently-used), or `null` (disabled - every scan is cold). |
+| `PDN_CACHE_LRU_MAX` | `2000` | Max entries for `lru`, or the size of the RAM front for `disk` (0 = none). Keep modest to bound RAM; raise on big-RAM hosts, lower on constrained ones. |
 | `PDN_CACHE_DIR` | `<config>/cache` | Directory for the disk-backed cache (only when `PDN_CACHE=disk`). Mount fast storage (NVMe) here. |
+| `PDN_LOG_SKIPS` | `off` | Set `on` to write per-file `[skip]` lines (unchanged files) to `sync.log` for troubleshooting. Default keeps the log small and speeds up large-tree reconciles. |
 
-The default `memory` cache holds the whole Drive tree in RAM so re-scans are
-fast, but on a large tree (e.g. ~173k files) that costs ~18 GB. On a smaller
-host, set `PDN_CACHE=lru` and cap `PDN_CACHE_LRU_MAX` to bound memory (evicted
-entries are re-fetched on the next scan), `PDN_CACHE=null` to use almost no
-cache at all (every scan re-walks Drive), or `PDN_CACHE=disk` to write entities
-to disk and keep only a bounded `PDN_CACHE_LRU_MAX`-sized slice in RAM. The disk
-cache also survives restarts, so re-scans after a restart start warm instead of
-cold. In every mode except `null` the small crypto-key cache stays in memory.
+The default `disk` cache writes each Drive entity to a SQLite database on disk
+and keeps only a bounded `PDN_CACHE_LRU_MAX`-sized slice in RAM, so memory stays
+low on large trees and re-scans after a restart start warm instead of cold.
+`cache.db` typically stays around ~1 GB even for a large tree, so the default
+location under `/config/cache` is fine; point `PDN_CACHE_DIR` at a dedicated fast
+volume only if you want it elsewhere. Set `PDN_CACHE=memory` for an unbounded
+in-memory cache (fastest, but can consume many GB on a large tree), `lru` to
+bound memory without disk persistence (evicted entries are re-fetched), or
+`null` to disable the cache entirely (every scan re-walks Drive). In every mode
+except `null` the small crypto-key cache stays in memory.
 
 ## HTTPS
 
