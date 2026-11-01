@@ -1,5 +1,10 @@
 # Event-Driven Incremental Sync
 
+> **Superseded by `DELTA_SYNC.md`.** The check-then-sync loop described here is
+> implemented and in production. Since then, auto-sync schedules were removed
+> entirely: every pair is real-time (see DELTA_SYNC.md section 4.5). This doc is
+> kept for the Phase 1 design history.
+
 A plan to replace the fixed 60s full-walk scheduler with a check-then-sync loop
 driven by the Proton Drive event feed and a local stat-scan, keeping the current
 three-way walk as the fallback for `tree_refresh`, `fast_forward`, and first sync.

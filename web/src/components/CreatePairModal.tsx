@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { addPair } from '../api';
 import type { LocalVolume } from '../types';
 import { FolderBrowser } from './FolderBrowser';
-import { SYNC_FREQUENCIES, scheduleFromValue } from '../schedule';
 
 function normalizeAbs(p: string): string {
     const stack: string[] = [];
@@ -35,8 +34,6 @@ interface Props {
 export function CreatePairModal({ volumes, onCreated, onClose }: Props) {
     const [localDir, setLocalDir] = useState('');
     const [folder, setFolder] = useState('');
-    const [autoSync, setAutoSync] = useState(false);
-    const [intervalSeconds, setIntervalSeconds] = useState(3600);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const safe = isSafeLocalDir(localDir, volumes);
@@ -53,10 +50,7 @@ export function CreatePairModal({ volumes, onCreated, onClose }: Props) {
         setBusy(true);
         setError(null);
         try {
-            const schedule = autoSync
-                ? scheduleFromValue(intervalSeconds)
-                : { realTime: false, autoSync: false, intervalSeconds: 0 };
-            await addPair(localDir.trim(), folder.trim(), schedule);
+            await addPair(localDir.trim(), folder.trim());
             await onCreated();
             onClose();
         } catch (err) {
@@ -94,31 +88,6 @@ export function CreatePairModal({ volumes, onCreated, onClose }: Props) {
                         mounted volume{volumes.length > 0 ? ` (${volumes.map((v) => v.path).join(', ')})` : ''}.
                     </div>
                 )}
-
-                <div className="field">
-                    <span>Sync schedule</span>
-                    <div className="schedule-row">
-                        <label className="toggle">
-                            <input type="checkbox" checked={autoSync} onChange={(e) => setAutoSync(e.target.checked)} />
-                            <span className="toggle-track">
-                                <span className="toggle-thumb" />
-                            </span>
-                            <span className="toggle-label">Auto-sync</span>
-                        </label>
-                        {autoSync && (
-                            <select className="select" value={intervalSeconds} onChange={(e) => setIntervalSeconds(Number(e.target.value))}>
-                                {SYNC_FREQUENCIES.map((f) => (
-                                    <option key={f.value} value={f.value}>
-                                        {f.label}
-                                    </option>
-                                ))}
-                            </select>
-                        )}
-                    </div>
-                    <span className="schedule-hint">
-                        {autoSync ? 'Sync automatically on this schedule.' : 'Manual: sync only when you click Sync.'}
-                    </span>
-                </div>
 
                 {error && <div className="alert">{error}</div>}
 

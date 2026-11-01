@@ -54,7 +54,7 @@ The key realization: a "targeted" operation still needs the *other* side to make
 - `src/proton/events.ts` - `pollEvents()`: drains the feed but returns only booleans (`driveChanged`, `treeRefresh`, `fastForward`, `lastEventId`), not the events themselves. It discards `nodeUid` / `parentNodeUid`.
 - `src/engine/walk.ts` - `walkLocalTree()` (`readdir` + `stat` -> `size`/`mtimeMs`), `walkDriveTree()` (recursive `iterateFolderChildren`), `driveFingerprint()`.
 - `src/state/syncDb.ts` - `nodes` table maps `driveUid` -> `(pairId, relPath, kind, driveFingerprint, localSha1, localSize, localMtime)`.
-- `src/server/index.ts` - scheduler: polls feed once, then real-time pairs use `localDirty` check-then-sync; due auto-sync pairs full-walk unconditionally (the stopgap from the shared-feed bug, commit `c8b206d`).
+- `src/server/index.ts` - scheduler: polls feed once, then every pair (all real-time; auto-sync schedules removed) uses `diffLocal` check-then-sync.
 - SDK: `getNodeHierarchy(nodeUid)` walks a node's ancestor chain; `getNode(uid)` fetches one node; `iterateEvents` marks changed nodes stale in the entity cache.
 
 Change detection today (from `reconcileFile`):
@@ -127,13 +127,13 @@ every REALTIME_INTERVAL_SECONDS:
   poll feed once (drain + stale-mark)
   if treeRefresh or fastForward -> full walk the affected pair(s)
   map events -> per-pair targets
-  for each real-time pair: diffLocal -> local targets
+  for each pair: diffLocal -> local targets
   run targeted reconcile on the union of targets (per pair)
   run the deletion barrier (batched per tick)
   advance lastEventId only after a clean tick
 ```
 
-Scheduled auto-sync pairs flip back from "always full walk" (the `c8b206d` stopgap) to "check-then-skip" - now correct, because mapping is pair-scoped, so a scheduled pair only syncs when an event maps into *its* folder (or its local scan is dirty). This resolves the original shared-feed bug at the root rather than by disabling the optimization.
+Auto-sync schedules are removed entirely. Every pair is real-time: it syncs when a mapped event points into *its* folder, when the feed is opaque, or when its local scan is dirty. The global pause button is the only "don't sync" control (no per-pair manual mode). Because mapping is pair-scoped, this resolves the original shared-feed bug at the root.
 
 ---
 
@@ -243,7 +243,7 @@ Extract `reconcileFolder` / `reconcileFile` / `reconcileDeletions` with explicit
 Add `diffLocal` returning `{added, modified, removed}`. No behavior change yet - the full walk still runs; this just exposes the delta.
 
 **M3 - Delta engine wiring (the surgical path).**
-Scheduler builds per-pair targeted change sets and runs the M0 per-node reconcile on only those relPaths (with targeted `getNode`/`stat` cross-checks). Fallback to full walk on section 9 triggers. Scheduled auto-sync pairs switch back to check-then-skip. Gate: same end-state as a full walk, measurably less Drive listing.
+Scheduler builds per-pair targeted change sets and runs the M0 per-node reconcile on only those relPaths (with targeted `getNode`/`stat` cross-checks). Fallback to full walk on section 9 triggers. Gate: same end-state as a full walk, measurably less Drive listing.
 
 **M4 - Hard cases.** Moves/renames, folder-delete subtree handling, self-write echo suppression, deletion-tripwire batching.
 
@@ -257,3 +257,4 @@ Scheduler builds per-pair targeted change sets and runs the M0 per-node reconcil
 2. **Self-write echo.** Accept the idempotent no-op - we write the new fingerprint to `sync.db` during the transfer, so re-processing our own echo hits "unchanged -> skip". The `recentlySyncedUid` TTL set is a later micro-optimization only if the no-op ever shows up as a cost. Confirmed.
 3. **Directory-mtime pruning** (local scan optimization). Deferred. Intended approach: check folder change times and narrow down until reaching the changed file(s). Note the pruning only helps for add/remove/rename - content edits do not bump a directory's mtime. Revisit only if measurement shows the stat-scan is a bottleneck.
 4. **Move/rename scope.** File moves first (bounded), folder moves as a folder-level subtree op later. Confirmed.
+5. **No schedules - all pairs real-time.** Auto-sync schedules, the auto-sync toggle, and the frequency selector are removed. Every pair is always-on real-time; the global pause button is the only off switch. Confirmed (2026-11-01).

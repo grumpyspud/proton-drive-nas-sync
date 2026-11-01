@@ -96,9 +96,6 @@ export function listPairs(): Promise<{ pairs: Pair[] }> {
 }
 
 export interface PairSettings {
-    realTime?: boolean;
-    autoSync?: boolean;
-    intervalSeconds?: number;
     dedupeEnabled?: boolean;
     dedupeMinBytes?: number;
 }

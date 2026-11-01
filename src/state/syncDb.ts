@@ -46,12 +46,6 @@ export interface Pair {
     localDir: string;
     driveFolderName: string;
     driveFolderUid: string;
-    /** Watch continuously (fixed 60s poll) while the server runs. */
-    realTime: boolean;
-    /** Sync on a schedule (intervalSeconds). */
-    autoSync: boolean;
-    /** Auto-sync frequency in seconds (0 = unset). */
-    intervalSeconds: number;
     /** Epoch ms of the last completed sync, or null if never. */
     lastSyncAt: number | null;
     /** Run the duplicate scan after each sync for this pair. */
@@ -76,9 +70,6 @@ interface PairRow {
     local_dir: string;
     drive_folder_name: string;
     drive_folder_uid: string;
-    real_time: number;
-    auto_sync: number;
-    interval_seconds: number;
     last_sync_at: number | null;
     dedupe_enabled: number;
     dedupe_min_bytes: number;
@@ -103,9 +94,6 @@ function toPair(row: PairRow): Pair {
         localDir: row.local_dir,
         driveFolderName: row.drive_folder_name,
         driveFolderUid: row.drive_folder_uid,
-        realTime: !!row.real_time,
-        autoSync: !!row.auto_sync,
-        intervalSeconds: row.interval_seconds ?? 0,
         lastSyncAt: row.last_sync_at ?? null,
         dedupeEnabled: !!row.dedupe_enabled,
         dedupeMinBytes: row.dedupe_min_bytes ?? 0,
@@ -167,9 +155,6 @@ export class SyncDB {
                 local_dir TEXT NOT NULL,
                 drive_folder_name TEXT NOT NULL,
                 drive_folder_uid TEXT NOT NULL,
-                real_time INTEGER NOT NULL DEFAULT 0,
-                auto_sync INTEGER NOT NULL DEFAULT 0,
-                interval_seconds INTEGER NOT NULL DEFAULT 0,
                 last_sync_at INTEGER,
                 dedupe_enabled INTEGER NOT NULL DEFAULT 0,
                 dedupe_min_bytes INTEGER NOT NULL DEFAULT 0
@@ -222,9 +207,6 @@ export class SyncDB {
         const add = (name: string, def: string) => {
             if (!names.has(name)) this.db.exec(`ALTER TABLE pairs ADD COLUMN ${name} ${def}`);
         };
-        add('real_time', 'INTEGER NOT NULL DEFAULT 0');
-        add('auto_sync', 'INTEGER NOT NULL DEFAULT 0');
-        add('interval_seconds', 'INTEGER NOT NULL DEFAULT 0');
         add('last_sync_at', 'INTEGER');
         add('dedupe_enabled', 'INTEGER NOT NULL DEFAULT 0');
         add('dedupe_min_bytes', 'INTEGER NOT NULL DEFAULT 0');
@@ -234,15 +216,12 @@ export class SyncDB {
         this.db
             .prepare(
                 `
-                INSERT INTO pairs (id, local_dir, drive_folder_name, drive_folder_uid, real_time, auto_sync, interval_seconds, last_sync_at, dedupe_enabled, dedupe_min_bytes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO pairs (id, local_dir, drive_folder_name, drive_folder_uid, last_sync_at, dedupe_enabled, dedupe_min_bytes)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     local_dir = excluded.local_dir,
                     drive_folder_name = excluded.drive_folder_name,
                     drive_folder_uid = excluded.drive_folder_uid,
-                    real_time = excluded.real_time,
-                    auto_sync = excluded.auto_sync,
-                    interval_seconds = excluded.interval_seconds,
                     last_sync_at = excluded.last_sync_at,
                     dedupe_enabled = excluded.dedupe_enabled,
                     dedupe_min_bytes = excluded.dedupe_min_bytes
@@ -253,9 +232,6 @@ export class SyncDB {
                 pair.localDir,
                 pair.driveFolderName,
                 pair.driveFolderUid,
-                pair.realTime ? 1 : 0,
-                pair.autoSync ? 1 : 0,
-                pair.intervalSeconds,
                 pair.lastSyncAt,
                 pair.dedupeEnabled ? 1 : 0,
                 pair.dedupeMinBytes,

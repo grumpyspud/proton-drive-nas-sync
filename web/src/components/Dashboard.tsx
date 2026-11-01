@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getConflicts, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listPairs, listTrash, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updatePair, updateSettings, type PairSettings } from '../api';
+import { cancelDeletion, clearTrash, confirmDeletion, deleteTrashItem, getConflicts, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listPairs, listTrash, removePair, restoreTrashItem, setSyncPaused, startSync, stopSync, updateSettings } from '../api';
 import type { DeletionHold, ErrorLogStatus, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
-import { formatBytes, formatDate, formatDurationHMS, formatSpeed } from '../format';
+import { formatBytes, formatDate, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
 import { LogsModal } from './LogsModal';
 import { ErrorLogModal } from './ErrorLogModal';
@@ -11,7 +11,6 @@ import { ConflictsModal } from './ConflictsModal';
 import { CreatePairModal } from './CreatePairModal';
 import { ActivityLogModal } from './ActivityLogModal';
 import { SignOutModal } from './SignOutModal';
-import { SYNC_FREQUENCIES, frequencyLabel, nextSyncAtMs, pairInterval, scheduleFromValue } from '../schedule';
 
 const MAX_LOG = 200;
 
@@ -59,7 +58,6 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [errorLogStatus, setErrorLogStatus] = useState<ErrorLogStatus | null>(null);
     const [openMenu, setOpenMenu] = useState<'logs' | 'settings' | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
-    const [now, setNow] = useState(() => Date.now());
 
     const reload = useCallback(async () => {
         try {
@@ -148,12 +146,6 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         const t = setInterval(() => void loadErrorStatus(), 15000);
         return () => clearInterval(t);
     }, [loadErrorStatus]);
-
-    // Tick once a second to drive the per-pair "next sync" countdown timers.
-    useEffect(() => {
-        const t = setInterval(() => setNow(Date.now()), 1000);
-        return () => clearInterval(t);
-    }, []);
 
     const hasUnseenErrors = (errorLogStatus?.unseenErrors ?? 0) > 0;
     const hasUnseenWarnings = ((errorLogStatus?.unseenConflicts ?? 0) + (errorLogStatus?.unseenWarnings ?? 0)) > 0;
@@ -395,16 +387,6 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         }
     }
 
-    async function onUpdatePair(id: string, settings: PairSettings) {
-        setError(null);
-        try {
-            await updatePair(id, settings);
-            await reload();
-        } catch (err) {
-            setError((err as Error).message);
-        }
-    }
-
     async function onTransferConcurrencyChange(value: number) {
         setError(null);
         try {
@@ -588,19 +570,13 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                         <h2>Folder pairs</h2>
                         <ul className="pair-list">
                             {pairs.map((p) => {
-                                const interval = pairInterval(p);
                                 const lastSyncLabel = p.lastSyncAt ? formatDate(p.lastSyncAt) : 'Never';
-                                const nextMs = nextSyncAtMs(p);
-                                const nextSyncLabel = p.realTime ? 'live' : nextMs === null ? 'Manual' : nextMs > now ? `~${formatDurationHMS(nextMs - now)}` : '~< 1 min';
                                 return (
                                     <li key={p.id} className="pair">
                                         <div className="pair-main">
                                             <div className="pair-info">
                                                 <div className="pair-name">
                                                     {p.driveFolderName || 'My Files (root)'}
-                                                    {interval !== null && (
-                                                        <span className="badge">⏱ {frequencyLabel(interval)}</span>
-                                                    )}
                                                 </div>
                                                 <div className="pair-dir">{p.localDir}</div>
                                             </div>
@@ -622,24 +598,10 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                                             </div>
                                             <div className="pair-sync-line">
                                                 <span className="pair-sync-label">Next sync:</span>{' '}
-                                                <span className="pair-sync-timer">{nextSyncLabel}</span>
+                                                <span className="pair-sync-timer">live</span>
                                             </div>
                                         </div>
                                         <div className="pair-settings">
-                                            <Toggle
-                                                label="Auto-sync"
-                                                checked={interval !== null}
-                                                onChange={(v) => onUpdatePair(p.id, v ? scheduleFromValue(3600) : { realTime: false, autoSync: false, intervalSeconds: 0 })}
-                                            />
-                                            {interval !== null && (
-                                                <select className="select" value={interval} onChange={(e) => onUpdatePair(p.id, scheduleFromValue(Number(e.target.value)))}>
-                                                    {SYNC_FREQUENCIES.map((f) => (
-                                                        <option key={f.value} value={f.value}>
-                                                            {f.label}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            )}
                                             {hashingPair && hashingPair.pairId === p.id ? (
                                                 <button className="btn btn-primary btn-sm" disabled>
                                                     Hashing… {hashingPair.total > 0 ? `${Math.round((hashingPair.done / hashingPair.total) * 100)}%` : ''}
@@ -820,18 +782,6 @@ function StorageCard({ storage }: { storage: StorageInfo }) {
                 {showTotal && <> · {formatBytes(storage.usedBytes)} used across all products</>}
             </div>
         </div>
-    );
-}
-
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
-    return (
-        <label className="toggle">
-            <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-            <span className="toggle-track">
-                <span className="toggle-thumb" />
-            </span>
-            <span className="toggle-label">{label}</span>
-        </label>
     );
 }
 

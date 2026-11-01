@@ -46,9 +46,6 @@ interface StorageUser {
 interface PairBody {
     localDir?: string;
     driveFolderName?: string;
-    realTime?: boolean;
-    autoSync?: boolean;
-    intervalSeconds?: number;
     dedupeEnabled?: boolean;
     dedupeMinBytes?: number;
 }
@@ -703,7 +700,7 @@ app.get('/api/pairs', requireAuth, (_req, res) => {
 });
 
 app.post('/api/pairs', requireAuth, async (req, res) => {
-    const { localDir, driveFolderName, realTime, autoSync, intervalSeconds, dedupeEnabled, dedupeMinBytes } = (req.body ?? {}) as PairBody;
+    const { localDir, driveFolderName, dedupeEnabled, dedupeMinBytes } = (req.body ?? {}) as PairBody;
     if (!localDir) {
         res.status(400).json({ error: 'localDir is required' });
         return;
@@ -724,9 +721,6 @@ app.post('/api/pairs', requireAuth, async (req, res) => {
             localDir,
             driveFolderName: driveFolder,
             driveFolderUid,
-            realTime: !!realTime,
-            autoSync: !!autoSync,
-            intervalSeconds: typeof intervalSeconds === 'number' ? intervalSeconds : 0,
             lastSyncAt: null,
             dedupeEnabled: !!dedupeEnabled,
             dedupeMinBytes: clampDedupeMinBytes(dedupeMinBytes),
@@ -749,13 +743,9 @@ app.patch('/api/pairs/:id', requireAuth, (req, res) => {
         const body = (req.body ?? {}) as PairBody;
         const updated: Pair = {
             ...pair,
-            realTime: typeof body.realTime === 'boolean' ? body.realTime : pair.realTime,
-            autoSync: typeof body.autoSync === 'boolean' ? body.autoSync : pair.autoSync,
-            intervalSeconds: typeof body.intervalSeconds === 'number' ? body.intervalSeconds : pair.intervalSeconds,
             dedupeEnabled: typeof body.dedupeEnabled === 'boolean' ? body.dedupeEnabled : pair.dedupeEnabled,
             dedupeMinBytes: body.dedupeMinBytes !== undefined ? clampDedupeMinBytes(body.dedupeMinBytes) : pair.dedupeMinBytes,
         };
-        if (updated.autoSync && updated.intervalSeconds <= 0) updated.intervalSeconds = 3600;
         db.upsertPair(updated);
         res.json({ pair: updated });
     } finally {
@@ -1338,28 +1328,18 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 
 // ---- background scheduler: check-then-sync loop ----
 //
-// Every REALTIME_INTERVAL_SECONDS we LOOK (not necessarily sync). Each tick:
+// Every REALTIME_INTERVAL_SECONDS we LOOK (not necessarily sync). Every folder
+// pair is real-time; there are no auto-sync schedules. Each tick:
 //   1. poll the Drive event feed once (volume-level, marks changed nodes stale
 //      so the full walks below re-fetch them - correct for every cache backend),
-//   2. run every auto-sync pair whose interval elapsed via its ORIGINAL full
-//      walk (never gated on the feed - see schedulerTick),
-//   3. check-then-sync each real-time pair: sync when a mapped Drive event
-//      points at it, when the feed is opaque (tree_refresh/fast_forward/
-//      tree_remove -> full walk), or when the local stat-scan shows a diff;
-//      otherwise skip to the next tick.
+//   2. check-then-sync each pair: sync when a mapped Drive event points at it,
+//      when the feed is opaque (tree_refresh/fast_forward/tree_remove -> full
+//      walk), or when the local stat-scan shows a diff; otherwise skip.
 // The full three-way walk remains the workhorse; the delta mapping (M1) only
-// narrows WHICH real-time pair runs it, and keeps the cache fresh for everyone.
+// narrows WHICH pair runs it, and keeps the cache fresh for everyone.
 
 function lastEventIdKey(treeEventScopeId: string): string {
     return `lastEventId:${treeEventScopeId}`;
-}
-
-/** Auto-sync pairs whose interval has elapsed since their last completed sync. */
-function dueAutoSyncPairs(db: SyncDB): Pair[] {
-    const now = Date.now();
-    return db.listPairs().filter(
-        (p) => p.autoSync && p.intervalSeconds > 0 && now - (p.lastSyncAt ?? 0) >= p.intervalSeconds * 1000,
-    );
 }
 
 async function schedulerTick(): Promise<void> {
@@ -1378,11 +1358,9 @@ async function schedulerTick(): Promise<void> {
     const db = new SyncDB(syncDbPath());
     try {
         const all = db.listPairs();
-        const rtPairs = all.filter((p) => p.realTime);
-        const autoDue = dueAutoSyncPairs(db);
 
-        // Nothing real-time and nothing scheduled: skip the whole tick.
-        if (rtPairs.length === 0 && autoDue.length === 0) return;
+        // No pairs at all: skip the whole tick.
+        if (all.length === 0) return;
 
         // Poll the event feed once (all pairs share the one "My Files" scope).
         // Its job here is the stale-marking side effect: changed nodes get marked
@@ -1408,7 +1386,7 @@ async function schedulerTick(): Promise<void> {
                 const mapped = await mapEventsToTargets(sdk, res.nodeEvents, all, db);
                 if (mapped.unmappable.length > 0) {
                     // Could not resolve every event to a pair - full-walk every
-                    // real-time pair rather than risk missing a change.
+                    // pair rather than risk missing a change.
                     forceFullWalk = true;
                     logger.info(`delta: ${mapped.unmappable.length}/${res.nodeEvents.length} event(s) unmappable -> full walk`);
                 } else {
@@ -1422,19 +1400,11 @@ async function schedulerTick(): Promise<void> {
             logger.warn(`Event feed poll failed: ${(error as Error).message ?? error}`);
         }
 
-        // Scheduled (auto-sync) pairs use the ORIGINAL method: always run the
-        // full walk when their interval elapses. They must NOT be gated on the
-        // shared feed, because a real-time pair's drain consumes volume-wide
-        // events for every pair - so "no new events since last poll" does not
-        // mean "this pair is clean", and the local scan is blind to Drive-side
-        // edits. The full walk is self-contained: it re-fetches any node the
-        // feed marked stale.
-        const toSync = new Set<string>(autoDue.map((p) => p.id));
-
-        // Real-time pairs: sync when the Drive side is opaque (full walk), a
-        // mapped event points at this pair, or the local stat-scan shows a
-        // change. Clean pairs are skipped to the next tick.
-        for (const p of rtPairs) {
+        // Every pair is real-time. Sync when the Drive side is opaque (full
+        // walk), a mapped event points at this pair, or the local stat-scan
+        // shows a change. Clean pairs are skipped to the next tick.
+        const toSync = new Set<string>();
+        for (const p of all) {
             if (forceFullWalk || driveAffected.has(p.id)) {
                 toSync.add(p.id);
                 continue;
