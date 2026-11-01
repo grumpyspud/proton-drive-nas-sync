@@ -320,6 +320,22 @@ export class SyncDB {
         this.db.prepare('DELETE FROM nodes WHERE pair_id = ? AND rel_path = ?').run(pairId, relPath);
     }
 
+    /** Delete a node and every descendant. When the node is a folder this is the
+     *  whole subtree (itself + all children at any depth); when it is a file the
+     *  subtree is just itself. A folder deletion MUST use this and not removeNode,
+     *  otherwise the children are left orphaned in sync.db and the next stat-scan
+     *  misreads them as "deleted locally" and trashes their Drive copies. */
+    removeSubtree(pairId: string, relPath: string): number {
+        const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => '\\' + c);
+        return Number(
+            this.db
+                .prepare(
+                    `DELETE FROM nodes WHERE pair_id = ? AND (rel_path = ? OR rel_path LIKE ? ESCAPE '\\')`,
+                )
+                .run(pairId, relPath, `${escapeLike(relPath)}/%`).changes,
+        );
+    }
+
     allNodes(pairId: string): SyncNode[] {
         const rows = this.db.prepare('SELECT * FROM nodes WHERE pair_id = ? ORDER BY rel_path').all(pairId) as unknown as NodeRow[];
         return rows.map(toNode);

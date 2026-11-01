@@ -498,7 +498,7 @@ export async function runDeletionBarrier(ctx: ReconcileContext): Promise<void> {
         if (ctx.driveDeletions.length > 0) {
             await drain(ctx.sdk.trashNodes(ctx.driveDeletions.map((d) => d.uid)));
             for (const d of ctx.driveDeletions) {
-                ctx.db.removeNode(ctx.pairId, d.relPath);
+                ctx.db.removeSubtree(ctx.pairId, d.relPath);
                 ctx.onProgress?.({ type: 'item', action: 'trash-drive', relPath: d.relPath });
             }
             ctx.result.driveTrashed += ctx.driveDeletions.length;
@@ -517,7 +517,7 @@ export async function runDeletionBarrier(ctx: ReconcileContext): Promise<void> {
                 const dst = path.join(trashRoot, d.relPath);
                 await mkdir(path.dirname(dst), { recursive: true });
                 await rename(src, dst);
-                ctx.db.removeNode(ctx.pairId, d.relPath);
+                ctx.db.removeSubtree(ctx.pairId, d.relPath);
                 ctx.onProgress?.({ type: 'item', action: 'recycle-local', relPath: d.relPath });
             }
             ctx.result.localRecycled += ctx.localDeletions.length;
