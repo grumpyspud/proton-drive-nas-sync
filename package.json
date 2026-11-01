@@ -1,6 +1,6 @@
 {
   "name": "proton-drive-nas-sync",
-  "version": "0.1.0",
+  "version": "0.8.0",
   "description": "Third-party Docker app to sync and back up folders between a NAS and Proton Drive. Not affiliated with or endorsed by Proton.",
   "type": "module",
   "license": "GPL-3.0",
