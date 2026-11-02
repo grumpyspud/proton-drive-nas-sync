@@ -90,6 +90,10 @@ export interface ReconcileContextOptions {
     shouldAbort?: () => boolean;
     progressMinBytes?: number;
     allowDeletions?: boolean;
+    /** When true, a local file/folder that is missing on Drive is re-uploaded
+     *  (Drive restored from local) instead of recycled. Used for the "restore to
+     *  Drive" recovery path after a Drive wipe/empty. */
+    restoreToDrive?: boolean;
 }
 
 /**
@@ -114,6 +118,7 @@ export class ReconcileContext {
     readonly shouldAbort?: () => boolean;
     readonly progressMinBytes: number;
     readonly allowDeletions?: boolean;
+    readonly restoreToDrive?: boolean;
 
     readonly localByRel = new Map<string, LocalEntry>();
     readonly driveByRel = new Map<string, DriveEntry>();
@@ -153,6 +158,7 @@ export class ReconcileContext {
         this.shouldAbort = opts.shouldAbort;
         this.progressMinBytes = opts.progressMinBytes ?? DEFAULT_PROGRESS_MIN_BYTES;
         this.allowDeletions = opts.allowDeletions;
+        this.restoreToDrive = opts.restoreToDrive;
     }
 
     checkAbort(): void {
@@ -279,7 +285,7 @@ export async function reconcileFolder(ctx: ReconcileContext, relPath: string): P
     const inDrive = !!D;
     const inDb = !!S;
 
-    if (inLocal && !inDrive && !inDb) {
+    if (inLocal && !inDrive && (!inDb || ctx.restoreToDrive)) {
         const parentRel = path.posix.dirname(relPath);
         const parentUid = parentRel === '.' ? ctx.driveFolderUid : ctx.driveByRel.get(parentRel)?.uid;
         if (!parentUid) throw new Error(`No parent for folder ${relPath}`);
@@ -296,7 +302,7 @@ export async function reconcileFolder(ctx: ReconcileContext, relPath: string): P
         ctx.driveByRel.set(relPath, { relPath, uid: created.uid, kind: 'folder', fingerprint: '', node: created });
         ctx.db.upsertNode({ pairId: ctx.pairId, relPath, kind: 'folder', driveUid: created.uid, driveFingerprint: null, localSha1: null, localSize: null, localMtime: null });
         ctx.onProgress?.({ type: 'item', action: 'mkdir-drive', relPath });
-        ctx.log(`created folder on Drive: ${relPath}`);
+        ctx.log(ctx.restoreToDrive ? `restored folder on Drive: ${relPath}` : `created folder on Drive: ${relPath}`);
     } else if (!inLocal && inDrive && !inDb) {
         await mkdir(path.join(ctx.localDir, relPath), { recursive: true });
         ctx.db.upsertNode({ pairId: ctx.pairId, relPath, kind: 'folder', driveUid: D!.uid, driveFingerprint: null, localSha1: null, localSize: null, localMtime: null });
@@ -451,14 +457,14 @@ export async function reconcileFile(ctx: ReconcileContext, relPath: string): Pro
         // -- local present, drive missing (drive deleted it) --
         if (inLocal && !inDrive) {
             const localChanged = S!.localSha1 != null && localSha1 !== S!.localSha1;
-            if (localChanged) {
+            if (localChanged || ctx.restoreToDrive) {
                 if (!parentUid) throw new Error(`No parent for ${relPath}`);
                 const uid = await uploadFile(ctx.sdk, parentUid, path.posix.basename(relPath), L!.absPath, ctx.transferReporter(relPath, 'upload'), localSha1 ?? undefined);
                 ctx.finishTransfer(relPath, L!.size);
                 ctx.db.upsertNode({ pairId: ctx.pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L!.size, localMtime: L!.mtimeMs });
                 ctx.result.uploaded++;
                 ctx.onProgress?.({ type: 'item', action: 'upload', relPath });
-                ctx.log(`re-uploaded ${relPath} (Drive copy was deleted)`);
+                ctx.log(ctx.restoreToDrive ? `restored ${relPath} to Drive` : `re-uploaded ${relPath} (Drive copy was deleted)`);
             } else {
                 ctx.localDeletions.push({ relPath });
             }

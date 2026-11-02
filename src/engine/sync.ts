@@ -38,6 +38,9 @@ export interface SyncOptions {
     transferConcurrency?: number;
     /** When true, skip the deletion-rate tripwire (user already confirmed). */
     allowDeletions?: boolean;
+    /** When true, re-upload local files/folders missing on Drive instead of
+     *  recycling them (restore Drive from local after a wipe/empty). */
+    restoreToDrive?: boolean;
 }
 
 /**
@@ -48,7 +51,7 @@ export interface SyncOptions {
  * from targeted inputs and calls the same per-node operations.
  */
 export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
-    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress, shouldAbort, progressMinBytes, allowDeletions } = options;
+    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress, shouldAbort, progressMinBytes, allowDeletions, restoreToDrive } = options;
 
     const ctx = new ReconcileContext({
         sdk,
@@ -62,6 +65,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         shouldAbort,
         progressMinBytes,
         allowDeletions,
+        restoreToDrive,
     });
 
     onProgress?.({ type: 'sync-start', pairId, localDir, driveFolderName: options.driveFolderName ?? '' });

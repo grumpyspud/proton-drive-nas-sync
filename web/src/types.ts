@@ -54,6 +54,7 @@ export type SyncProgressEvent =
     | { type: 'log'; message: string }
     | { type: 'deletion-hold'; pairId: string; totalTracked: number; deletions: number; pct: number; thresholdPct: number; driveTrash: string[]; localRecycle: string[] }
     | { type: 'deletion-confirmed' }
+    | { type: 'deletion-restoring' }
     | { type: 'deletion-cancelled' };
 
 export interface TransferState {

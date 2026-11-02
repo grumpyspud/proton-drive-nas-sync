@@ -72,6 +72,7 @@ export type SyncProgressEvent =
           localRecycle: string[];
       }
     | { type: 'deletion-confirmed' }
+    | { type: 'deletion-restoring' }
     | { type: 'deletion-cancelled' };
 
 export type ProgressHandler = (event: SyncProgressEvent) => void;

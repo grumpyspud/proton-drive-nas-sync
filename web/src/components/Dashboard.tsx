@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { cancelDeletion, clearDriveTrash, clearTrash, confirmDeletion, deleteDriveTrash, deleteTrashItem, getConflicts, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listDriveTrash, listPairs, listTrash, removePair, restoreDriveTrash, restoreTrashItem, setSyncPaused, startSync, stopSync, updateSettings } from '../api';
+import { cancelDeletion, clearDriveTrash, clearTrash, confirmDeletion, deleteDriveTrash, deleteTrashItem, getConflicts, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listDriveTrash, listPairs, listTrash, removePair, restoreDriveTrash, restoreToDrive, restoreTrashItem, setSyncPaused, startSync, stopSync, updateSettings } from '../api';
 import type { DeletionHold, DriveTrashItem, ErrorLogStatus, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
@@ -309,6 +309,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     });
                     break;
                 case 'deletion-confirmed':
+                case 'deletion-restoring':
                 case 'deletion-cancelled':
                     setDeletionHold(null);
                     break;
@@ -383,6 +384,15 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         setError(null);
         try {
             await cancelDeletion(id);
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    }
+
+    async function onRestoreDeletion(id: string) {
+        setError(null);
+        try {
+            await restoreToDrive(id);
         } catch (err) {
             setError((err as Error).message);
         }
@@ -519,6 +529,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                             <DeletionHoldCard
                                 hold={deletionHold}
                                 onConfirm={() => void onConfirmDeletion(deletionHold.pairId)}
+                                onRestore={() => void onRestoreDeletion(deletionHold.pairId)}
                                 onCancel={() => void onCancelDeletion(deletionHold.pairId)}
                             />
                         )}
@@ -634,7 +645,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     );
 }
 
-function DeletionHoldCard({ hold, onConfirm, onCancel }: { hold: DeletionHold; onConfirm: () => void; onCancel: () => void }) {
+function DeletionHoldCard({ hold, onConfirm, onRestore, onCancel }: { hold: DeletionHold; onConfirm: () => void; onRestore: () => void; onCancel: () => void }) {
     const pct = hold.pct.toFixed(1);
     const driveCount = hold.driveTrash.length;
     const localCount = hold.localRecycle.length;
@@ -659,6 +670,11 @@ function DeletionHoldCard({ hold, onConfirm, onCancel }: { hold: DeletionHold; o
                 {driveCount > 0 && localCount > 0 && <span className="dh-sep">·</span>}
                 {localCount > 0 && <span>{localCount} would be recycled locally (.pdn-trash)</span>}
             </div>
+            {localCount > 0 && (
+                <p className="dh-desc" style={{ marginTop: 8 }}>
+                    These local files were deleted from Drive. "Restore to Drive" uploads them back instead of recycling them.
+                </p>
+            )}
             {preview.length > 0 && (
                 <ul className="dh-preview">
                     {preview.map((p, i) => (
@@ -671,6 +687,11 @@ function DeletionHoldCard({ hold, onConfirm, onCancel }: { hold: DeletionHold; o
                 </ul>
             )}
             <div className="dh-actions">
+                {localCount > 0 && (
+                    <button className="btn btn-primary" onClick={onRestore}>
+                        Restore to Drive
+                    </button>
+                )}
                 <button className="btn btn-danger" onClick={onConfirm}>
                     Confirm & proceed
                 </button>

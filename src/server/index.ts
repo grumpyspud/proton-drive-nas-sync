@@ -145,7 +145,7 @@ interface DeltaInput {
     localDiff: LocalDiff;
 }
 
-async function runSync(pairId: string, allowDeletions = false, delta: DeltaInput | null = null): Promise<boolean> {
+async function runSync(pairId: string, allowDeletions = false, delta: DeltaInput | null = null, restoreToDrive = false): Promise<boolean> {
     if (syncing || paused) return false;
     syncing = true;
     syncingPairId = pairId;
@@ -175,12 +175,17 @@ async function runSync(pairId: string, allowDeletions = false, delta: DeltaInput
             progressMinBytes: PROGRESS_MIN_BYTES,
             transferConcurrency: getTransferConcurrency(db),
             allowDeletions,
+            restoreToDrive,
         };
         // Targeted delta first; fall back to the full walk when it can't resolve
-        // every Drive target surgically (or no delta was supplied, e.g. manual sync).
-        const summary = delta
-            ? ((await syncDelta({ ...common, targets: delta.targets, localDiff: delta.localDiff })) ?? (await syncOnce(common)))
-            : await syncOnce(common);
+        // every Drive target surgically (or no delta was supplied, e.g. manual
+        // sync). A restore-to-drive always full-walks so it re-uploads the whole
+        // local tree instead of only the delta's targeted subset.
+        const summary = restoreToDrive
+            ? await syncOnce(common)
+            : delta
+                ? ((await syncDelta({ ...common, targets: delta.targets, localDiff: delta.localDiff })) ?? (await syncOnce(common)))
+                : await syncOnce(common);
         db.markSynced(pairId);
         broadcast({ type: 'sync-complete', pairId, summary });
         return true;
@@ -1210,6 +1215,18 @@ app.post('/api/sync/:id/cancel-deletion', requireAuth, (req, res) => {
         broadcast({ type: 'deletion-cancelled' });
     }
     res.json({ ok: true });
+});
+
+app.post('/api/sync/:id/restore-to-drive', requireAuth, (req, res) => {
+    const pd = pendingDeletion;
+    if (!pd || pd.pairId !== req.params.id) {
+        res.status(404).json({ error: 'No pending deletion to restore' });
+        return;
+    }
+    pendingDeletion = null;
+    broadcast({ type: 'deletion-restoring' });
+    res.json({ ok: true });
+    void runSync(req.params.id as string, false, null, true);
 });
 
 app.get('/api/logs', requireAuth, (req, res) => {

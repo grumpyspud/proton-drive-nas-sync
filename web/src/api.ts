@@ -136,6 +136,10 @@ export function cancelDeletion(id: string): Promise<{ ok: boolean }> {
     return request(`/api/sync/${encodeURIComponent(id)}/cancel-deletion`, { method: 'POST' });
 }
 
+export function restoreToDrive(id: string): Promise<{ ok: boolean }> {
+    return request(`/api/sync/${encodeURIComponent(id)}/restore-to-drive`, { method: 'POST' });
+}
+
 export interface LogQueryResult {
     lines: string[];
     total: number;

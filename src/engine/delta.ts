@@ -35,6 +35,9 @@ export interface SyncDeltaOptions {
     progressMinBytes?: number;
     transferConcurrency?: number;
     allowDeletions?: boolean;
+    /** Re-upload local items missing on Drive (restore path); the delta will
+     *  fall back to the full walk on a stale parent regardless. */
+    restoreToDrive?: boolean;
 }
 
 /**
@@ -65,6 +68,7 @@ export async function syncDelta(options: SyncDeltaOptions): Promise<SyncResult |
         shouldAbort,
         progressMinBytes,
         allowDeletions,
+        restoreToDrive,
     } = options;
 
     const ctx = new ReconcileContext({
@@ -79,6 +83,7 @@ export async function syncDelta(options: SyncDeltaOptions): Promise<SyncResult |
         shouldAbort,
         progressMinBytes,
         allowDeletions,
+        restoreToDrive,
     });
 
     onProgress?.({ type: 'sync-start', pairId, localDir, driveFolderName: options.driveFolderName ?? '' });
