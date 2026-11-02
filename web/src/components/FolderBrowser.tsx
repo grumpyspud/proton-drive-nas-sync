@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { listDriveDir, listLocalDir, mkdirLocal } from '../api';
+import { listDriveDir, listLocalDir, mkdirDrive, mkdirLocal } from '../api';
 import type { DirListing } from '../types';
 
 interface Props {
@@ -16,8 +16,8 @@ interface Props {
  * drive mode browses Proton Drive by slash-separated name path.
  *
  * Drive mode adds a "My Files (entire drive)" row to select the root itself.
- * Local mode adds a "New folder" action to create a subfolder of the current
- * path.
+ * Both modes add a "New folder" action to create a subfolder of the current
+ * path (on the local filesystem or on Drive, respectively).
  */
 export function FolderBrowser({ mode, value, placeholder, onChange }: Props) {
     const [listing, setListing] = useState<DirListing | null>(null);
@@ -63,7 +63,8 @@ export function FolderBrowser({ mode, value, placeholder, onChange }: Props) {
         setCreating(true);
         setError(null);
         try {
-            await mkdirLocal(value, name);
+            if (mode === 'local') await mkdirLocal(value, name);
+            else await mkdirDrive(value, name);
             setNewName('');
             setShowNew(false);
             // Re-list the current directory so the new folder appears in place.
@@ -110,8 +111,7 @@ export function FolderBrowser({ mode, value, placeholder, onChange }: Props) {
                 )}
                 {loading && <div className="browser-note">Loading…</div>}
             </div>
-            {mode === 'local' &&
-                (showNew ? (
+            {(showNew ? (
                     <div className="browser-new">
                         <input
                             autoFocus

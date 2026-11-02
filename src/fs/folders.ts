@@ -35,3 +35,29 @@ export async function findOrCreateFolderPath(sdk: ProtonDriveClient, rootUid: st
     }
     return parent;
 }
+
+/**
+ * Creates a new subfolder `name` under the Drive folder at `parentPath`
+ * (slash-separated name path under My Files, e.g. "Backups/Photos"; empty
+ * string = the My Files root). Returns the new folder's name path.
+ */
+export async function mkdirDrive(sdk: ProtonDriveClient, parentPath: string, name: string): Promise<{ ok: boolean; path: string }> {
+    const clean = (name ?? '').trim();
+    if (!clean) throw new Error('Folder name is required');
+    if (/[\\/]/.test(clean) || clean === '.' || clean === '..') throw new Error('Invalid folder name');
+
+    const root = await sdk.getMyFilesRootFolder();
+    const segments = (parentPath ?? '').split('/').map((s) => s.trim()).filter(Boolean);
+    let parentUid = root.uid;
+    for (const segment of segments) {
+        const uid = await findFolder(sdk, parentUid, segment);
+        if (!uid) throw new Error(`Folder "${segment}" not found`);
+        parentUid = uid;
+    }
+
+    if (await findFolder(sdk, parentUid, clean)) throw new Error(`Already exists: ${clean}`);
+
+    await sdk.createFolder(parentUid, clean);
+    const fullPath = segments.length ? `${segments.join('/')}/${clean}` : clean;
+    return { ok: true, path: fullPath };
+}

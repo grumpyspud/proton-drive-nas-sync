@@ -10,7 +10,7 @@ import { configDir, loadMasterKey } from '../crypto/keySource';
 import { CACHE_DIR, DELTA_ENABLED, REALTIME_INTERVAL_SECONDS, FULL_SCAN_INTERVAL } from '../config';
 import { listLocalDir, mkdirLocal } from '../fs/browse';
 import { resolveTls, type TlsConfig } from './tls';
-import { findFolder, findOrCreateFolderPath } from '../fs/folders';
+import { findFolder, findOrCreateFolderPath, mkdirDrive } from '../fs/folders';
 import { nodeName } from '../fs/files';
 import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
 import { NodeType } from '@protontech/drive-sdk';
@@ -682,6 +682,16 @@ app.get('/api/drive/list', requireAuth, async (req, res) => {
         res.json({ path: namePath, root: 'My Files', parent, folders });
     } catch (error) {
         res.status(502).json({ error: (error as Error).message ?? 'Failed to list Drive folders' });
+    }
+});
+
+app.post('/api/drive/mkdir', requireAuth, async (req, res) => {
+    const { parent, name } = (req.body ?? {}) as { parent?: string; name?: string };
+    try {
+        const sdk = authService.getSession().sdk;
+        res.json(await mkdirDrive(sdk, parent ?? '', name ?? ''));
+    } catch (error) {
+        res.status(400).json({ error: (error as Error).message ?? 'Failed to create folder' });
     }
 });
 

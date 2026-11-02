@@ -211,6 +211,10 @@ export function mkdirLocal(parent: string, name: string): Promise<{ ok: boolean;
     return request<{ ok: boolean; path: string }>('/api/fs/mkdir', { method: 'POST', body: JSON.stringify({ parent, name }) });
 }
 
+export function mkdirDrive(parent: string, name: string): Promise<{ ok: boolean; path: string }> {
+    return request<{ ok: boolean; path: string }>('/api/drive/mkdir', { method: 'POST', body: JSON.stringify({ parent, name }) });
+}
+
 export function listTrash(id: string): Promise<{ items: TrashItem[] }> {
     return request(`/api/pairs/${encodeURIComponent(id)}/trash`);
 }
