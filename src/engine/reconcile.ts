@@ -270,6 +270,8 @@ export class ReconcileContext {
  * both directions; deletions are deferred to `runDeletionBarrier`.
  */
 export async function reconcileFolder(ctx: ReconcileContext, relPath: string): Promise<void> {
+    if (ctx.isUnderDeletedFolder(relPath)) return; // covered by the parent folder deletion
+
     const L = ctx.localByRel.get(relPath);
     const D = ctx.driveByRel.get(relPath);
     const S = ctx.storedByRel.get(relPath);
