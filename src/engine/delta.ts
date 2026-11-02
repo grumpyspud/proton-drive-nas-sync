@@ -9,6 +9,7 @@ import type { SyncTarget } from './mapping';
 import {
     ReconcileContext,
     runReconcile,
+    StaleParentError,
     DEFAULT_TRANSFER_CONCURRENCY,
     MAX_TRANSFER_CONCURRENCY,
 } from './reconcile';
@@ -174,7 +175,18 @@ export async function syncDelta(options: SyncDeltaOptions): Promise<SyncResult |
 
     // 7. Drive the shared per-node reconcile over the sparse context.
     const transferConcurrency = Math.min(MAX_TRANSFER_CONCURRENCY, Math.max(1, Math.floor(options.transferConcurrency ?? DEFAULT_TRANSFER_CONCURRENCY)));
-    await runReconcile(ctx, transferConcurrency);
+    try {
+        await runReconcile(ctx, transferConcurrency);
+    } catch (err) {
+        // A stale parent (Drive wiped or recreated externally) means our sparse
+        // Drive-side view is wrong; fall back to the full walk, which re-lists
+        // Drive authoritatively instead of aborting the whole sync on one folder.
+        if (err instanceof StaleParentError) {
+            log(`delta: falling back to full walk (${err.message})`);
+            return null;
+        }
+        throw err;
+    }
 
     return ctx.result;
 }

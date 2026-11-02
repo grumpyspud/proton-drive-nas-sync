@@ -31,6 +31,21 @@ export class SyncAbortedError extends Error {
     }
 }
 
+/**
+ * A folder could not be created on Drive because the parent node this reconcile
+ * is using no longer exists (a stale uid from a prior state - e.g. the Drive was
+ * wiped or the parent was recreated externally), or the name is already taken by
+ * a node our sparse view does not know about. The delta engine must fall back to
+ * the full walk, which re-lists Drive and rebuilds the tree authoritatively.
+ */
+export class StaleParentError extends Error {
+    constructor(relPath: string, cause?: unknown) {
+        super(`Cannot create Drive folder ${relPath}: parent missing or stale`);
+        this.name = 'StaleParentError';
+        if (cause !== undefined) this.cause = cause;
+    }
+}
+
 /** Files smaller than this get no individual progress bar (avoids UI flicker on
  *  floods of small files); the job-level bar still tracks them. */
 export const DEFAULT_PROGRESS_MIN_BYTES = 5 * 1024 * 1024;
@@ -266,7 +281,16 @@ export async function reconcileFolder(ctx: ReconcileContext, relPath: string): P
         const parentRel = path.posix.dirname(relPath);
         const parentUid = parentRel === '.' ? ctx.driveFolderUid : ctx.driveByRel.get(parentRel)?.uid;
         if (!parentUid) throw new Error(`No parent for folder ${relPath}`);
-        const created = await ctx.sdk.createFolder(parentUid, path.posix.basename(relPath));
+        let created;
+        try {
+            created = await ctx.sdk.createFolder(parentUid, path.posix.basename(relPath));
+        } catch (err) {
+            // Parent uid is stale (Drive wiped / recreated externally) or the name
+            // already exists in a view this sparse context does not hold. Either
+            // way the delta's Drive-side picture is wrong: signal a full-walk
+            // fallback instead of aborting the whole sync on one folder.
+            throw new StaleParentError(relPath, err);
+        }
         ctx.driveByRel.set(relPath, { relPath, uid: created.uid, kind: 'folder', fingerprint: '', node: created });
         ctx.db.upsertNode({ pairId: ctx.pairId, relPath, kind: 'folder', driveUid: created.uid, driveFingerprint: null, localSha1: null, localSize: null, localMtime: null });
         ctx.onProgress?.({ type: 'item', action: 'mkdir-drive', relPath });
