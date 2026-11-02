@@ -112,6 +112,10 @@ class AuthService {
             const credentials = createSessionCredentials({ persist: true });
             await credentials.load();
             if (!credentials.uid || !credentials.refreshToken) return false;
+            if (!credentials.getUserKeyPassword()) {
+                logger.warn('Session resume failed: persisted session has no user key password (incomplete login)');
+                return false;
+            }
             const session = await buildSession(credentials, logger);
             const refreshed = await session.apiClient.refreshSessionIfPossible();
             if (!refreshed) return false;

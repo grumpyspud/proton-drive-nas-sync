@@ -33,6 +33,10 @@ export class PersistentCredentials implements SessionCredentials {
     private _refreshToken?: string;
     private _userKeyPassword?: string;
     private _telemetryEnabled = true;
+    // Persistence stays OFF until the user key password is set (login fully
+    // completed) or a full session is loaded from disk. This keeps the scoped
+    // pre-2FA refresh token off disk.
+    private _persistEnabled = false;
 
     constructor(private readonly options: PersistentCredentialsOptions) {}
 
@@ -76,6 +80,7 @@ export class PersistentCredentials implements SessionCredentials {
             this._refreshToken = data.refreshToken;
             this._userKeyPassword = data.userKeyPassword;
             this._telemetryEnabled = data.telemetryEnabled;
+            this._persistEnabled = true;
         } catch (error) {
             if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
                 return; // no persisted session: not an error
@@ -86,6 +91,8 @@ export class PersistentCredentials implements SessionCredentials {
 
     async setUserKeyPassword(userKeyPassword: string): Promise<void> {
         this._userKeyPassword = userKeyPassword;
+        // Login is now fully complete (2FA + key derivation done): arm persistence.
+        this._persistEnabled = true;
         await this.persist();
     }
 
@@ -114,6 +121,9 @@ export class PersistentCredentials implements SessionCredentials {
     }
 
     private async persist(): Promise<void> {
+        if (!this._persistEnabled) {
+            return; // not armed: a scoped pre-2FA session must never hit disk
+        }
         if (!this._uid || !this._refreshToken) {
             return; // nothing durable to persist yet
         }
