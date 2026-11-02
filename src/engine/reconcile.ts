@@ -1,5 +1,6 @@
 import { mkdir, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { ValidationError } from '@protontech/drive-sdk';
 import type { ProtonDriveClient } from '@protontech/drive-sdk';
 import { downloadFile, sha1OfFile, uploadFile, uploadFileRevision } from '../fs/files';
 import type { TransferProgress } from '../fs/files';
@@ -40,10 +41,16 @@ export class SyncAbortedError extends Error {
  */
 export class StaleParentError extends Error {
     constructor(relPath: string, cause?: unknown) {
-        super(`Cannot create Drive folder ${relPath}: parent missing or stale`);
+        super(`Drive parent missing or stale for ${relPath}`);
         this.name = 'StaleParentError';
         if (cause !== undefined) this.cause = cause;
     }
+}
+
+/** True when the SDK rejected an operation because a uid no longer resolves
+ *  (a stale parent/folder uid backfilled from sync.db after a Drive wipe). */
+function isItemNotFound(err: unknown): boolean {
+    return err instanceof ValidationError && /item not found/i.test(err.message);
 }
 
 /** Files smaller than this get no individual progress bar (avoids UI flicker on
@@ -486,6 +493,11 @@ export async function reconcileFile(ctx: ReconcileContext, relPath: string): Pro
             return;
         }
     } catch (err) {
+        // A stale parent uid (Drive wiped / recreated externally) surfaces as an
+        // "Item not found" ValidationError when the delta uploads a file into a
+        // parent it backfilled from sync.db. Signal a full-walk fallback instead
+        // of skip-on-error looping every tick.
+        if (isItemNotFound(err)) throw new StaleParentError(relPath, err);
         // Skip-on-error: one bad file never aborts the whole sync.
         ctx.result.failed++;
         const reason = (err as Error)?.message ?? String(err);
