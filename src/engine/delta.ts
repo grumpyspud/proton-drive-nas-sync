@@ -187,7 +187,9 @@ export async function syncDelta(options: SyncDeltaOptions): Promise<SyncResult |
         // Drive-side view is wrong; fall back to the full walk, which re-lists
         // Drive authoritatively instead of aborting the whole sync on one folder.
         if (err instanceof StaleParentError) {
-            log(`delta: falling back to full walk (${err.message})`);
+            const msg = `delta: falling back to full walk (${err.message})`;
+            log(msg);
+            onProgress?.({ type: 'log', message: msg });
             return null;
         }
         throw err;
