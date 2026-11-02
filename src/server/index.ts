@@ -32,6 +32,7 @@ import { appendErrorLog, clearErrorLog, errorLogStatus, readErrorLog, setLastRes
 import { isAppAuthEnabled, isValidSession, issueSessionToken, loadAppAuth, setAppPassword, verifyAppPassword } from './appAuth';
 import { decryptBackup, describePassphrasePolicy, encryptBackup, isStrongPassphrase, type BackupPayload } from '../crypto/backup';
 import { appendAuditEvent, computeAuditState, fingerprintFromRequest, fingerprintIdentity } from './backupAudit';
+import { checkForUpdates, getVersionInfo, startUpdateCheck } from './versionCheck';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -266,6 +267,16 @@ function appAuthGate(req: Request, res: Response, next: NextFunction): void {
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+// ---- version / update check (unauthenticated; public release metadata only) ----
+app.get('/api/version', (_req, res) => {
+    const info = getVersionInfo();
+    // Cold cache (first request before the startup check finished): kick a
+    // background refresh so the next request reflects the latest release,
+    // without blocking this one on a slow/offline GitHub API call.
+    if (info.checkedAt == null) void checkForUpdates();
+    res.json(info);
+});
 
 // ---- app password endpoints (unauthenticated; the gate itself is applied below) ----
 loadAppAuth();
@@ -1578,6 +1589,9 @@ async function schedulerTick(): Promise<void> {
 setInterval(() => {
     void schedulerTick();
 }, REALTIME_INTERVAL_SECONDS * 1000);
+
+// Check for a newer release once at startup, then every 12h in the background.
+startUpdateCheck();
 
 const PORT = parseInt(process.env.PDN_PORT ?? '8787', 10);
 void (async () => {

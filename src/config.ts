@@ -1,7 +1,22 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { checkBaseUrl } from './proton/urlGuard';
 
 export const APP_VERSION = process.env.PDN_APP_VERSION ?? 'external-drive@0.1.0';
 export const BASE_URL = process.env.PROTON_DRIVE_BASE_URL ?? 'drive-api.proton.me';
+
+/**
+ * The app's own release version, read from package.json at startup. Distinct
+ * from APP_VERSION (the Proton SDK client string): this is what the dashboard
+ * displays and what the update check compares against GitHub releases.
+ */
+let releaseVersion = '';
+try {
+    releaseVersion = (JSON.parse(readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')) as { version?: string }).version ?? '';
+} catch {
+    releaseVersion = '';
+}
+export const APP_RELEASE_VERSION = releaseVersion || 'unknown';
 
 // Fail fast on an unsafe base URL: the session token and SRP credentials must
 // only ever be sent to Proton hosts.

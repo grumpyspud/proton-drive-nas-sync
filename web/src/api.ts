@@ -87,6 +87,19 @@ export function appLogout(): Promise<{ ok: boolean }> {
     return request('/api/app/logout', { method: 'POST' });
 }
 
+export interface VersionInfo {
+    current: string;
+    latest: string;
+    updateAvailable: boolean;
+    releaseUrl: string;
+    checkedAt: number | null;
+    error?: string;
+}
+
+export function getVersion(): Promise<VersionInfo> {
+    return request<VersionInfo>('/api/version');
+}
+
 export function setAppPassword(currentPassword: string, newPassword: string): Promise<{ ok: boolean; enabled?: boolean }> {
     return request('/api/app/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) });
 }

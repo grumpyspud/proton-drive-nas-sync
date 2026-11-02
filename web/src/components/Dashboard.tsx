@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { cancelDeletion, clearDriveTrash, clearTrash, confirmDeletion, deleteDriveTrash, deleteTrashItem, getConflicts, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, hashMissing, listDriveTrash, listPairs, listTrash, removePair, restoreDriveTrash, restoreToDrive, restoreTrashItem, setSyncPaused, startSync, stopSync, updateSettings } from '../api';
+import { cancelDeletion, clearDriveTrash, clearTrash, confirmDeletion, deleteDriveTrash, deleteTrashItem, getConflicts, getErrorLogStatus, getLocalStorage, getSettings, getStorage, getSyncStatus, getVersion, hashMissing, listDriveTrash, listPairs, listTrash, removePair, restoreDriveTrash, restoreToDrive, restoreTrashItem, setSyncPaused, startSync, stopSync, updateSettings, type VersionInfo } from '../api';
 import type { DeletionHold, DriveTrashItem, ErrorLogStatus, LocalVolume, OverallState, Pair, StorageInfo, SyncProgressEvent, SyncSummary, TransferState, TrashItem } from '../types';
 import { formatBytes, formatSpeed } from '../format';
 import { ProgressBar } from './ProgressBar';
@@ -58,6 +58,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
     const [showSignOut, setShowSignOut] = useState(false);
     const [errorLogStatus, setErrorLogStatus] = useState<ErrorLogStatus | null>(null);
     const [openMenu, setOpenMenu] = useState<'logs' | 'settings' | null>(null);
+    const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
 
     const reload = useCallback(async () => {
@@ -142,6 +143,14 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         }
     }, []);
 
+    const loadVersion = useCallback(async () => {
+        try {
+            setVersionInfo(await getVersion());
+        } catch {
+            /* non-critical */
+        }
+    }, []);
+
     useEffect(() => {
         void loadErrorStatus();
         const t = setInterval(() => void loadErrorStatus(), 15000);
@@ -159,7 +168,15 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
         void loadSyncStatus();
         void loadSettings();
         void loadConflicts();
-    }, [reload, loadStorage, loadLocalStorage, loadSyncStatus, loadSettings, loadConflicts]);
+        void loadVersion();
+    }, [reload, loadStorage, loadLocalStorage, loadSyncStatus, loadSettings, loadConflicts, loadVersion]);
+
+    // Refresh the version info hourly so a long-open dashboard still surfaces
+    // a newly detected release without a manual reload.
+    useEffect(() => {
+        const t = setInterval(() => void loadVersion(), 60 * 60 * 1000);
+        return () => clearInterval(t);
+    }, [loadVersion]);
 
     useEffect(() => {
         const es = new EventSource('/api/events');
@@ -414,7 +431,15 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                 <div className="brand">
                     <div className="brand-mark">⇄</div>
                     <div>
-                        <h1>Proton Drive NAS Sync</h1>
+                        <h1>
+                            Proton Drive NAS Sync
+                            {versionInfo?.current && <span className="version">v{versionInfo.current}</span>}
+                            {versionInfo?.updateAvailable && (
+                                <a className="update-badge" href={versionInfo.releaseUrl || undefined} target="_blank" rel="noreferrer" title={`Version ${versionInfo.latest} is available`}>
+                                    Update available
+                                </a>
+                            )}
+                        </h1>
                         <p className="subtitle">Signed in as {storage?.displayName || storage?.email || uid || '…'}</p>
                     </div>
                 </div>
