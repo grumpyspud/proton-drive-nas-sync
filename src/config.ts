@@ -1,5 +1,15 @@
+import { checkBaseUrl } from './proton/urlGuard';
+
 export const APP_VERSION = process.env.PDN_APP_VERSION ?? 'external-drive@0.1.0';
 export const BASE_URL = process.env.PROTON_DRIVE_BASE_URL ?? 'drive-api.proton.me';
+
+// Fail fast on an unsafe base URL: the session token and SRP credentials must
+// only ever be sent to Proton hosts.
+const baseUrlError = checkBaseUrl(BASE_URL);
+if (baseUrlError) {
+    throw new Error(`PROTON_DRIVE_BASE_URL "${BASE_URL}" is not a safe Proton endpoint (${baseUrlError}). Refusing to start.`);
+}
+
 export const SDK_VERSION = 'js@0.23.0';
 
 /**
