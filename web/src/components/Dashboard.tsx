@@ -444,14 +444,14 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     </div>
                 </div>
                 <div className="topbar-actions">
-                    <button className={`btn ${paused ? 'btn-primary' : 'btn-ghost'}`} onClick={togglePause} title={paused ? 'Resume all syncing' : 'Pause all syncing'}>
-                        {paused ? '▶ Resume' : '⏸ Pause'}
-                    </button>
                     {syncing && (
                         <button className="btn btn-danger" onClick={onStop} title="Stop the current sync">
                             ⏹ Stop
                         </button>
                     )}
+                    <button className={`btn ${paused ? 'btn-primary' : 'btn-ghost'}`} onClick={togglePause} title={paused ? 'Resume all syncing' : 'Pause all syncing'}>
+                        {paused ? '▶ Resume' : '⏸ Pause'}
+                    </button>
                     <button className="btn btn-primary" onClick={() => setShowCreatePair(true)} title="Create a new sync pair">
                         ＋ Create Sync Pair
                     </button>
