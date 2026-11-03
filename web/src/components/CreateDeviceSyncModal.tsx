@@ -69,7 +69,7 @@ export function CreateDeviceSyncModal({ volumes, claimedUids, autoAddTaken, onCr
                 </div>
 
                 <div className="field">
-                    <label className="toggle-row">
+                    <label className="device-toggle">
                         <input type="checkbox" checked={autoAdd} disabled={autoAddTaken} onChange={(e) => setAutoAdd(e.target.checked)} />
                         <span>Auto add/remove new computers</span>
                     </label>
