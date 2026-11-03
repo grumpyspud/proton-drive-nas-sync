@@ -1747,9 +1747,14 @@ async function schedulerTick(): Promise<void> {
                 continue;
             }
             const dirty = !localDiffEmpty(diff);
-            if (targets.length === 0 && !dirty) continue; // clean - next tick
+            // A pair that has never synced must do its first full walk regardless
+            // of local/Drive diff: it has to download a Drive folder that already
+            // has content (e.g. a computer's folder in a device sync) even when
+            // the local folder is still empty and no Drive event points at it yet.
+            const neverSynced = p.lastSyncAt == null;
+            if (targets.length === 0 && !dirty && !neverSynced) continue; // clean - next tick
             toSync.add(p.id);
-            if (DELTA_ENABLED) {
+            if (DELTA_ENABLED && !neverSynced) {
                 deltas.set(p.id, { targets, localDiff: diff });
                 logger.info(`delta: pair ${p.id} -> ${targets.length} Drive target(s), +${diff.added.length} ~${diff.modified.length} -${diff.removed.length}`);
             }
