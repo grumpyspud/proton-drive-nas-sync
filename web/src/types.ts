@@ -17,6 +17,21 @@ export interface Device {
     lastSyncTime: number | null;
 }
 
+export interface DeviceSyncDevice {
+    pairId: string;
+    deviceUid: string | null;
+    name: string;
+    lastSyncAt: number | null;
+}
+
+export interface DeviceSync {
+    id: string;
+    localDir: string;
+    autoAddRemove: boolean;
+    createdAt: number;
+    devices: DeviceSyncDevice[];
+}
+
 export interface SyncSummary {
     uploaded: number;
     downloaded: number;

@@ -5,6 +5,8 @@ import type { Device } from '../types';
 interface Props {
     selected: string[];
     onChange: (uids: string[]) => void;
+    /** Device uids already claimed by another device sync (rendered disabled). */
+    disabledUids?: string[];
 }
 
 /**
@@ -12,7 +14,7 @@ interface Props {
  * checkboxes. Selecting a device means "sync to this device's root folder".
  * Fetches its own device list on mount; the parent owns the selection state.
  */
-export function DevicePicker({ selected, onChange }: Props) {
+export function DevicePicker({ selected, onChange, disabledUids }: Props) {
     const [devices, setDevices] = useState<Device[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -53,11 +55,12 @@ export function DevicePicker({ selected, onChange }: Props) {
         <div className="device-list">
             {devices.map((device) => {
                 const checked = selected.includes(device.uid);
+                const claimed = (disabledUids ?? []).includes(device.uid);
                 return (
-                    <label key={device.uid} className={`device-row${checked ? ' selected' : ''}`}>
-                        <input type="checkbox" checked={checked} onChange={() => toggle(device.uid)} />
+                    <label key={device.uid} className={`device-row${checked ? ' selected' : ''}${claimed ? ' disabled' : ''}`}>
+                        <input type="checkbox" checked={checked} disabled={claimed} onChange={() => toggle(device.uid)} />
                         <span className="device-name">{device.name}</span>
-                        <span className="device-type">{device.type}</span>
+                        <span className="device-type">{claimed ? 'in use by another sync' : device.type}</span>
                     </label>
                 );
             })}

@@ -745,7 +745,8 @@ app.put('/api/settings', requireAuth, (req, res) => {
 app.get('/api/pairs', requireAuth, (_req, res) => {
     const db = new SyncDB(syncDbPath());
     try {
-        res.json({ pairs: db.listPairs() });
+        // Device pairs are surfaced under /api/device-syncs, not as folder pairs.
+        res.json({ pairs: db.listPairs().filter((p) => p.deviceUid === null) });
     } finally {
         db.close();
     }

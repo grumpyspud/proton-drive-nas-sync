@@ -1,4 +1,4 @@
-import type { Conflict, Device, DirListing, DriveTrashItem, DuplicateGroup, ErrorLogEntry, ErrorLogStatus, IgnoredGroup, LocalVolume, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
+import type { Conflict, Device, DeviceSync, DirListing, DriveTrashItem, DuplicateGroup, ErrorLogEntry, ErrorLogStatus, IgnoredGroup, LocalVolume, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
 
 function getDeviceId(): string {
     try {
@@ -110,6 +110,18 @@ export function listPairs(): Promise<{ pairs: Pair[] }> {
 
 export function listDevices(): Promise<{ devices: Device[] }> {
     return request('/api/devices');
+}
+
+export function listDeviceSyncs(): Promise<{ syncs: DeviceSync[] }> {
+    return request('/api/device-syncs');
+}
+
+export function createDeviceSync(localDir: string, deviceUids: string[], autoAddRemove: boolean): Promise<{ sync: DeviceSync }> {
+    return request('/api/device-syncs', { method: 'POST', body: JSON.stringify({ localDir, deviceUids, autoAddRemove }) });
+}
+
+export function removeDeviceSync(id: string): Promise<{ ok: boolean }> {
+    return request(`/api/device-syncs/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 export interface PairSettings {

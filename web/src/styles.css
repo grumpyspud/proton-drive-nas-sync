@@ -1898,4 +1898,21 @@ select.select:focus {
     font-size: 12px;
     color: var(--ink-400);
 }
+.device-row.disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+.device-row.disabled:hover {
+    background: transparent;
+}
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-weight: 500;
+}
+.toggle-row input {
+    margin: 0;
+}
 

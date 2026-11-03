@@ -11,7 +11,7 @@ import { ConflictsModal } from './ConflictsModal';
 import { CreatePairModal } from './CreatePairModal';
 import { ActivityLogModal } from './ActivityLogModal';
 import { SignOutModal } from './SignOutModal';
-import { DeviceListModal } from './DeviceListModal';
+import { DeviceSyncsModal } from './DeviceSyncsModal';
 
 const MAX_LOG = 200;
 
@@ -454,8 +454,8 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
                     <button className={`btn ${paused ? 'btn-primary' : 'btn-ghost'}`} onClick={togglePause} title={paused ? 'Resume all syncing' : 'Pause all syncing'}>
                         {paused ? '▶ Resume' : '⏸ Pause'}
                     </button>
-                    <button className="btn btn-ghost" onClick={() => setShowDevices(true)} title="List your Proton Drive computers">
-                        🖥 Computers
+                    <button className="btn btn-ghost" onClick={() => setShowDevices(true)} title="Mirror folders to your computers">
+                        🖥 Device syncs
                     </button>
                     <button className="btn btn-primary" onClick={() => setShowCreatePair(true)} title="Create a new sync pair">
                         ＋ Create Sync Pair
@@ -667,7 +667,7 @@ export function Dashboard({ uid, theme, onToggleTheme, onLogout, appAuthEnabled,
             {showActivityLog && <ActivityLogModal items={items} totalItems={totalItems} onClose={() => setShowActivityLog(false)} />}
             {showErrorLog && <ErrorLogModal onClose={() => { setShowErrorLog(false); void loadErrorStatus(); }} />}
             {showCreatePair && <CreatePairModal volumes={localVolumes} pairs={pairs} onCreated={reload} onClose={() => setShowCreatePair(false)} />}
-            {showDevices && <DeviceListModal onClose={() => setShowDevices(false)} />}
+            {showDevices && <DeviceSyncsModal volumes={localVolumes} onClose={() => setShowDevices(false)} />}
             {dedupePair && <DuplicatesModal pair={dedupePair} onClose={() => setDedupePair(null)} />}
             {conflictsPair && <ConflictsModal pair={conflictsPair} onClose={() => setConflictsPair(null)} onChanged={() => void loadConflicts()} />}
             {showBackup && <BackupModal onClose={() => setShowBackup(false)} />}
