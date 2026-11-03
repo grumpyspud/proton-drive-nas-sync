@@ -8,6 +8,15 @@ export interface Pair {
     dedupeMinBytes: number;
 }
 
+export interface Device {
+    uid: string;
+    name: string;
+    type: string;
+    rootFolderUid: string;
+    creationTime: number;
+    lastSyncTime: number | null;
+}
+
 export interface SyncSummary {
     uploaded: number;
     downloaded: number;

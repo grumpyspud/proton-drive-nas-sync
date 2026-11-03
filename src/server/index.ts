@@ -14,6 +14,7 @@ import { dataMountPaths, isSafeLocalPath } from '../fs/volumes';
 import { resolveTls, type TlsConfig } from './tls';
 import { findFolder, findOrCreateFolderPath, mkdirDrive } from '../fs/folders';
 import { nodeName } from '../fs/files';
+import { listDevices } from '../fs/devices';
 import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
 import { NodeType } from '@protontech/drive-sdk';
 import { syncOnce, SyncAbortedError, DEFAULT_TRANSFER_CONCURRENCY, MAX_TRANSFER_CONCURRENCY } from '../engine/sync';
@@ -614,6 +615,15 @@ app.post('/api/drive/mkdir', requireAuth, async (req, res) => {
         res.json(await mkdirDrive(sdk, parent ?? '', name ?? ''));
     } catch (error) {
         res.status(400).json({ error: (error as Error).message ?? 'Failed to create folder' });
+    }
+});
+
+app.get('/api/devices', requireAuth, async (_req, res) => {
+    try {
+        const sdk = authService.getSession().sdk;
+        res.json({ devices: await listDevices(sdk) });
+    } catch (error) {
+        res.status(502).json({ error: (error as Error).message ?? 'Failed to list devices' });
     }
 });
 

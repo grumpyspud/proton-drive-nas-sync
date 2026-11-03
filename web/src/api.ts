@@ -1,4 +1,4 @@
-import type { Conflict, DirListing, DriveTrashItem, DuplicateGroup, ErrorLogEntry, ErrorLogStatus, IgnoredGroup, LocalVolume, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
+import type { Conflict, Device, DirListing, DriveTrashItem, DuplicateGroup, ErrorLogEntry, ErrorLogStatus, IgnoredGroup, LocalVolume, Pair, StorageInfo, SyncSummary, TrashItem } from './types';
 
 function getDeviceId(): string {
     try {
@@ -106,6 +106,10 @@ export function setAppPassword(currentPassword: string, newPassword: string): Pr
 
 export function listPairs(): Promise<{ pairs: Pair[] }> {
     return request('/api/pairs');
+}
+
+export function listDevices(): Promise<{ devices: Device[] }> {
+    return request('/api/devices');
 }
 
 export interface PairSettings {

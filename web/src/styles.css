@@ -1857,3 +1857,45 @@ select.select:focus {
     background: var(--tag-warn-bg);
 }
 
+/* Device picker (Computers section) */
+.device-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+.device-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    min-width: 0;
+}
+.device-row:hover {
+    background: var(--surface);
+}
+.device-row.selected {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+}
+.device-row input[type='checkbox'] {
+    flex-shrink: 0;
+}
+.device-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+}
+.device-type {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--ink-400);
+}
+
