@@ -206,6 +206,7 @@ async function runSync(pairId: string, allowDeletions = false, delta: DeltaInput
             transferConcurrency: getTransferConcurrency(db),
             allowDeletions,
             restoreToDrive,
+            deviceName: pair.deviceUid ? pair.driveFolderName : null,
         };
         // Targeted delta first; fall back to the full walk when it can't resolve
         // every Drive target surgically (or no delta was supplied, e.g. manual

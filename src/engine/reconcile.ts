@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdir, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { ValidationError } from '@protontech/drive-sdk';
@@ -85,6 +86,18 @@ function contentMatches(localSha1: string, localSize: number, driveFp: string | 
     return localSize === driveSize(driveNode);
 }
 
+/** Insert a device name before a file's extension: `report.txt` becomes
+ *  `report (DESKTOP-ABC).txt`; `README` becomes `README (DESKTOP-ABC)`. */
+function withDeviceSuffix(relPath: string, deviceName: string): string {
+    const dir = path.posix.dirname(relPath);
+    const base = path.posix.basename(relPath);
+    const dot = base.lastIndexOf('.');
+    const name = dot > 0 ? base.slice(0, dot) : base;
+    const ext = dot > 0 ? base.slice(dot) : '';
+    const suffixed = `${name} (${deviceName})${ext}`;
+    return dir === '.' ? suffixed : `${dir}/${suffixed}`;
+}
+
 export interface ReconcileContextOptions {
     sdk: ProtonDriveClient;
     pairId: string;
@@ -101,6 +114,9 @@ export interface ReconcileContextOptions {
      *  (Drive restored from local) instead of recycled. Used for the "restore to
      *  Drive" recovery path after a Drive wipe/empty. */
     restoreToDrive?: boolean;
+    /** For device pairs, the device's name; conflicts auto-resolve (mtime winner,
+     *  loser renamed with this suffix). Null for My Files pairs (manual review). */
+    deviceName?: string | null;
 }
 
 /**
@@ -126,6 +142,7 @@ export class ReconcileContext {
     readonly progressMinBytes: number;
     readonly allowDeletions?: boolean;
     readonly restoreToDrive?: boolean;
+    readonly deviceName: string | null;
 
     readonly localByRel = new Map<string, LocalEntry>();
     readonly driveByRel = new Map<string, DriveEntry>();
@@ -166,6 +183,7 @@ export class ReconcileContext {
         this.progressMinBytes = opts.progressMinBytes ?? DEFAULT_PROGRESS_MIN_BYTES;
         this.allowDeletions = opts.allowDeletions;
         this.restoreToDrive = opts.restoreToDrive;
+        this.deviceName = opts.deviceName ?? null;
     }
 
     checkAbort(): void {
@@ -260,6 +278,40 @@ export class ReconcileContext {
             createdAt: ts,
         });
         this.log(`conflict on ${relPath}: Drive version saved as ${path.basename(conflictRel)}: pending review`);
+    }
+
+    /** Auto-resolve a two-way conflict for a device pair: the newer mtime wins,
+     *  and the loser is preserved under a ` (device-name)` suffix - never
+     *  hard-deleted. The Drive side's mtime comes from Drive's stored mtimeMs,
+     *  not the PC's local clock; on an unknown Drive mtime, local (NAS) wins. */
+    async autoResolveDeviceConflict(relPath: string, D: DriveEntry, L: LocalEntry, localSha1: string, driveFp: string | null): Promise<void> {
+        const deviceName = this.deviceName ?? 'device';
+        const driveMt = driveMtime(D.node);
+        const localWins = driveMt == null || L.mtimeMs >= driveMt;
+        let loserRel = withDeviceSuffix(relPath, deviceName);
+        if (existsSync(path.join(this.localDir, loserRel))) {
+            loserRel = withDeviceSuffix(relPath, `${deviceName} ${Date.now()}`);
+        }
+
+        if (localWins) {
+            // NAS newer: preserve the device copy under the suffixed name, then
+            // push the NAS version up to Drive (canonical path).
+            await this.downloadTo(D.uid, loserRel, path.join(this.localDir, loserRel));
+            const uid = await uploadFileRevision(this.sdk, D.uid, L.absPath, this.transferReporter(relPath, 'upload'), localSha1);
+            this.finishTransfer(relPath, L.size);
+            this.db.upsertNode({ pairId: this.pairId, relPath, kind: 'file', driveUid: uid, driveFingerprint: null, localSha1, localSize: L.size, localMtime: L.mtimeMs });
+            this.log(`conflict on ${relPath}: NAS newer - ${path.basename(loserRel)} preserved`);
+            this.onProgress?.({ type: 'item', action: 'conflict', relPath, message: `auto-resolved (NAS newer): ${path.basename(loserRel)} preserved` });
+        } else {
+            // Device newer: preserve the NAS copy under the suffixed name, then
+            // pull the device version into the canonical path.
+            await rename(L.absPath, path.join(this.localDir, loserRel));
+            const dl = await this.downloadTo(D.uid, relPath, path.join(this.localDir, relPath));
+            this.db.upsertNode({ pairId: this.pairId, relPath, kind: 'file', driveUid: D.uid, driveFingerprint: driveFp, localSha1: dl.sha1, localSize: dl.size, localMtime: dl.mtimeMs });
+            this.log(`conflict on ${relPath}: ${deviceName} newer - ${path.basename(loserRel)} preserved`);
+            this.onProgress?.({ type: 'item', action: 'conflict', relPath, message: `auto-resolved (${deviceName} newer): ${path.basename(loserRel)} preserved` });
+        }
+        this.result.conflicts++;
     }
 
     /** True when relPath is inside a folder scheduled for deletion this cycle. */
@@ -407,6 +459,8 @@ export async function reconcileFile(ctx: ReconcileContext, relPath: string): Pro
                 ctx.db.upsertNode({ pairId: ctx.pairId, relPath, kind: 'file', driveUid: D!.uid, driveFingerprint: driveFp, localSha1, localSize: L!.size, localMtime: L!.mtimeMs });
                 ctx.result.skipped++;
                 ctx.onProgress?.({ type: 'item', action: 'skip', relPath });
+            } else if (ctx.deviceName) {
+                await ctx.autoResolveDeviceConflict(relPath, D!, L!, localSha1!, driveFp);
             } else {
                 await ctx.recordConflict(relPath, D!, L!, localSha1!);
                 ctx.result.conflicts++;
@@ -438,6 +492,8 @@ export async function reconcileFile(ctx: ReconcileContext, relPath: string): Pro
                     ctx.db.upsertNode({ pairId: ctx.pairId, relPath, kind: 'file', driveUid: D!.uid, driveFingerprint: driveFp, localSha1, localSize: L!.size, localMtime: L!.mtimeMs });
                     ctx.result.skipped++;
                     ctx.onProgress?.({ type: 'item', action: 'skip', relPath });
+                } else if (ctx.deviceName) {
+                    await ctx.autoResolveDeviceConflict(relPath, D!, L!, localSha1!, driveFp);
                 } else {
                     await ctx.recordConflict(relPath, D!, L!, localSha1!);
                     ctx.result.conflicts++;

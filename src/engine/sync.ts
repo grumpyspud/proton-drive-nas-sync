@@ -41,6 +41,9 @@ export interface SyncOptions {
     /** When true, re-upload local files/folders missing on Drive instead of
      *  recycling them (restore Drive from local after a wipe/empty). */
     restoreToDrive?: boolean;
+    /** For device pairs, the device's name; conflicts auto-resolve (mtime winner,
+     *  loser renamed with this suffix). Null for My Files pairs (manual review). */
+    deviceName?: string | null;
 }
 
 /**
@@ -51,7 +54,7 @@ export interface SyncOptions {
  * from targeted inputs and calls the same per-node operations.
  */
 export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
-    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress, shouldAbort, progressMinBytes, allowDeletions, restoreToDrive } = options;
+    const { sdk, pairId, localDir, driveFolderUid, db, deletionThresholdPct, log = () => {}, onProgress, shouldAbort, progressMinBytes, allowDeletions, restoreToDrive, deviceName } = options;
 
     const ctx = new ReconcileContext({
         sdk,
@@ -66,6 +69,7 @@ export async function syncOnce(options: SyncOptions): Promise<SyncResult> {
         progressMinBytes,
         allowDeletions,
         restoreToDrive,
+        deviceName,
     });
 
     onProgress?.({ type: 'sync-start', pairId, localDir, driveFolderName: options.driveFolderName ?? '' });

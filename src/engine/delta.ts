@@ -38,6 +38,9 @@ export interface SyncDeltaOptions {
     /** Re-upload local items missing on Drive (restore path); the delta will
      *  fall back to the full walk on a stale parent regardless. */
     restoreToDrive?: boolean;
+    /** For device pairs, the device's name; conflicts auto-resolve (mtime winner,
+     *  loser renamed with this suffix). Null for My Files pairs (manual review). */
+    deviceName?: string | null;
 }
 
 /**
@@ -69,6 +72,7 @@ export async function syncDelta(options: SyncDeltaOptions): Promise<SyncResult |
         progressMinBytes,
         allowDeletions,
         restoreToDrive,
+        deviceName,
     } = options;
 
     const ctx = new ReconcileContext({
@@ -84,6 +88,7 @@ export async function syncDelta(options: SyncDeltaOptions): Promise<SyncResult |
         progressMinBytes,
         allowDeletions,
         restoreToDrive,
+        deviceName,
     });
 
     onProgress?.({ type: 'sync-start', pairId, localDir, driveFolderName: options.driveFolderName ?? '' });
