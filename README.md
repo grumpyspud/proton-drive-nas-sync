@@ -27,6 +27,10 @@ and Proton Drive.
 - **"Real-time" sync**: every pair syncs continuously - additions, edits, and
   deletions on either side are mirrored automatically, with a manual **Sync**
   button for an immediate run.
+- **Computer (device) sync**: mirror a NAS folder with the folders Proton Drive
+  syncs from your computers (the desktop app's "Computers" devices), with
+  optional auto-add/remove of new devices and automatic two-way conflict
+  resolution.
 - **Duplicate-file scan**: find and recycle duplicate files within a pair, with a
   minimum-size filter and an ignore list.
 - **Proton Drive trash view**: list, restore, permanently delete, and empty the
@@ -34,6 +38,10 @@ and Proton Drive.
 - **Configurable concurrency**: 1–4 parallel transfers.
 - **Encrypted-at-rest credentials**: only an AES-256-GCM encrypted session blob
   is persisted; passwords are never stored.
+- **Hardened by default**: an optional app password (on top of Proton sign-in)
+  gates the dashboard and API; the session blob is only written after login fully
+  completes; and outbound requests are restricted to Proton-owned hosts over
+  HTTPS.
 
 ## How it works
 

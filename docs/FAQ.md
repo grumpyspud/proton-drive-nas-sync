@@ -36,6 +36,24 @@ in. (That's a snapshot of your *setup*, not your files.)
 
 ---
 
+## What are "device syncs" (Computers)?
+
+Proton Drive's desktop app syncs a "Computers" folder for each machine you install
+it on. A **device sync** connects a NAS folder to those computer folders, so a set
+of PCs and the NAS all mirror each other through Drive: an edit on one PC reaches
+the NAS and the other PCs, and NAS changes flow back to them.
+
+- One computer can be in **one** device sync; a sync can hold several computers.
+- **Only one** device sync can enable **auto add/remove** (join new computers /
+  drop gone ones automatically).
+- A device sync may start empty **only** with auto add/remove on.
+- The NAS folder is fixed at creation (delete and recreate to change it).
+
+Device syncs also resolve conflicts automatically rather than freezing them for
+review (see below).
+
+---
+
 ## Design choices: the UI
 
 - **One container, one surface.** The React frontend is built and served by the
@@ -112,6 +130,23 @@ treat it like your credentials, because the encrypted session blob lives there.
 
 ---
 
+## What security hardening is built in?
+
+- **SSRF guard.** Outbound requests are restricted to Proton-owned hosts
+  (`proton.me` / `proton.ch` / `protonmail.com` / `proton.black` and their
+  subdomains) over HTTPS only. The session bearer token, SRP credentials, and
+  refresh token are never sent to a non-Proton host or over plain HTTP, and an
+  unsafe `PROTON_DRIVE_BASE_URL` stops the app at startup.
+- **Session gating.** The encrypted session blob is written to disk only after
+  login fully completes (2FA + key derivation), and a partial blob (for example
+  from a restart mid-2FA) is rejected on resume rather than surfacing a
+  half-authenticated session.
+- **App password.** An optional self-hosted password (scrypt-hashed, HMAC-signed
+  session cookies) gates the dashboard, the API, and the live sync stream on top
+  of the Proton login.
+
+---
+
 ## How will the app handle Proton's upcoming crypto change?
 
 Proton Drive is moving to a new cryptographic model around the end of 2026 /
@@ -155,11 +190,16 @@ Each folder pair is a three-way reconcile, run continuously in "real time":
 ### What happens on a conflict?
 
 If the same file changes in *both* places between syncs, the app does **not** pick
-a winner. It preserves the **Drive** version next to the local file as
-`filename.conflict-<timestamp>`, records the conflict, and freezes that one file
-(skipped in later syncs) until you resolve it. Nothing is silently overwritten or
-lost: you review both versions in the pair's **Conflicts** panel (see the user
-guide) and choose which to keep.
+a winner for a regular folder pair. It preserves the **Drive** version next to the
+local file as `filename.conflict-<timestamp>`, records the conflict, and freezes
+that one file (skipped in later syncs) until you resolve it. Nothing is silently
+overwritten or lost: you review both versions in the pair's **Conflicts** panel
+(see the user guide) and choose which to keep.
+
+**Device syncs are the exception**: they resolve conflicts automatically - the
+newer version (by Drive's server-side modification time) keeps the name, and the
+older version is preserved as `filename (computer-name).ext`. See the user guide's
+device-sync section.
 
 ### What protects against accidental mass deletion?
 
@@ -224,9 +264,11 @@ Be aware of these before relying on it:
   trash is a manual step.
 - **No file version history.** Sync mirrors the *current* state; the trash is
   the recovery path, not snapshots.
-- **No automatic conflict merge.** A conflict keeps both copies: the Drive version
-  is saved as `.conflict-<ts>` and the file is frozen until you pick a winner in the
-  **Conflicts** panel; there is no content merge.
+- **No automatic conflict merge.** For a regular folder pair, a conflict keeps
+  both copies: the Drive version is saved as `.conflict-<ts>` and the file is
+  frozen until you pick a winner in the **Conflicts** panel; there is no content
+  merge. Device syncs instead auto-resolve by modification time (newer wins,
+  older kept as `filename (computer-name).ext`) - still no content-level merge.
 - **Dedupe is per-pair and local-only.** It finds duplicates within one pair's
   local folder, on demand: not across pairs, and not on the Drive side.
 - **Human verification is manual.** Proton's CAPTCHA challenge (rare, usually

@@ -68,6 +68,55 @@ control.
 
 ---
 
+## Device syncs (Computers)
+
+A **device sync** connects a NAS folder to the folders Proton Drive syncs from
+your **computers** (the machines running the Proton Drive desktop app, shown under
+Drive's "Computers" section). It mirrors a folder across your NAS and multiple
+PCs: a change on any PC flows to Drive and then to the NAS, and vice-versa.
+
+Open **🖥 Device syncs** in the top bar to manage them.
+
+### Creating a device sync
+
+1. Click **🖥 Device syncs** → **＋ Create device sync**.
+2. **NAS / local folder**: the folder on the NAS to sync.
+3. **Computers to sync**: check one or more computers. Each computer's synced
+   folder becomes a member of the sync.
+4. Optional: turn on **Auto add/remove new computers** to automatically join new
+   computers to this sync as they register, and drop ones that go away.
+5. Click **Create device sync**.
+
+Rules that keep it safe and predictable:
+
+- A computer can be part of **one** device sync at a time.
+- **Only one** device sync can enable auto add/remove.
+- A device sync may be created with **no computers selected** only when auto
+  add/remove is on: it then waits for computers to appear.
+- The NAS folder is fixed after creation: to change it, delete and recreate the
+  sync (your files are not deleted).
+
+### Editing a device sync
+
+Each sync row lets you **add computers** (or remove members with ✕), **toggle
+auto add/remove**, and **remove the whole sync**. Removing a device sync removes
+its pair config only: the files on the NAS and in Drive are left where they are.
+
+### How device conflicts are resolved
+
+Unlike a regular folder pair (which freezes a conflict for you to review), a
+device sync resolves conflicts automatically on the next sync:
+
+- The **newer** version (by Proton Drive's server-side modification time) keeps
+  the original name.
+- The older version is preserved next to it as `filename (computer-name).ext` -
+  never deleted.
+- On a tie, or when the Drive time is unknown, the **NAS** copy wins.
+
+See [Conflicts](#conflicts) for how regular pairs handle the same situation.
+
+---
+
 ## Running and controlling a sync
 
 - **Sync** (on a pair) runs that pair immediately.
@@ -119,6 +168,10 @@ can **Reset** an individual group or **Reset all** to bring them back into scans
 ---
 
 ## Conflicts
+
+> **Device syncs resolve conflicts automatically** rather than freezing them (see
+> [Device syncs (Computers)](#device-syncs-computers)). The manual flow below
+> applies to regular folder pairs.
 
 A **conflict** happens when the same file changes in *both* places between syncs ~
 for example, you edit `notes.txt` on the NAS and a different version of `notes.txt`

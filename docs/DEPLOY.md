@@ -95,6 +95,7 @@ are never written to disk. On restart the app resumes the session automatically.
 |----------|---------|---------|
 | `PDN_CONFIG_DIR` | `/config` | Where the session blob + sync DB live. |
 | `PDN_ENCRYPTION_KEY` | *(auto-provision)* | 64-hex-char (32-byte) key encrypting the session blob. Generate with `openssl rand -hex 32`. |
+| `PDN_APP_PASSWORD` | *(unset)* | Seed the app password on **first run only**. After that, in-app changes are the source of truth and this var is ignored. |
 | `PDN_PORT` | `8787` | Listen port (change the compose `ports` mapping to match). |
 | `PDN_TLS_CERT` | *(auto self-signed)* | Path to a PEM TLS certificate (use with `PDN_TLS_KEY`) to serve HTTPS with your own cert. |
 | `PDN_TLS_KEY` | *(auto self-signed)* | Path to the matching PEM TLS private key. |
@@ -145,6 +146,11 @@ already terminates TLS), set `PDN_HTTP: "true"`.
 
 ## Security
 
+- **App password (recommended).** Set an app password from **⚙ Settings → Set
+  password** (or seed it with `PDN_APP_PASSWORD` on first run). When set, it
+  gates the dashboard, the API, and the live sync stream on top of the Proton
+  login, and is stored only as a scrypt hash with HMAC-signed session cookies.
+  Without it, anyone who can reach the port can use the dashboard.
 - **Encryption key.** Without `PDN_ENCRYPTION_KEY`, the app auto-provisions a
   random key at `/config/encryption.key` (mode 0600). That is fine for a home
   NAS, but for anything more sensitive, set `PDN_ENCRYPTION_KEY` to a fixed value
@@ -152,9 +158,14 @@ already terminates TLS), set `PDN_HTTP: "true"`.
 - **Non-root.** To run as your NAS user, uncomment `user: "1000:1000"` in the
   compose file (set the uid/gid to match), and `chown -R 1000:1000` the host
   `config` and `data` folders first.
-- **Exposure.** The UI has no built-in authentication beyond the Proton login;
-  it also serves the storage/sync controls. Put it behind a reverse proxy with
-  auth (or restrict to Tailscale) before exposing it beyond your LAN.
+- **SSRF guard.** Outbound requests are restricted to Proton-owned hosts over
+  HTTPS. The session token is never sent to a non-Proton host or over plain HTTP,
+  and an unsafe `PROTON_DRIVE_BASE_URL` stops the app at startup.
+- **Session gating.** The encrypted session blob is written only after login fully
+  completes; a partial blob is rejected on resume, so a restart mid-2FA never
+  surfaces a half-authenticated session.
+- **Exposure.** Even with an app password, put the app behind a reverse proxy
+  with auth (or restrict to Tailscale) before exposing it beyond your LAN.
 
 ## Troubleshooting
 

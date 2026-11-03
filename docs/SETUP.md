@@ -159,6 +159,8 @@ The top bar holds the global controls:
 - **⏸ Pause / ▶ Resume**: pause or resume all syncing.
 - **⏹ Stop** (shown only while syncing): stop the current sync.
 - **＋ Create Sync Pair**: add a folder pair.
+- **🖥 Device syncs**: sync a NAS folder with your computers (Proton Drive
+  "Computers" devices). See [step 9a](#9a-device-syncs-computers--optional).
 - **Logs ▾**: open the **Sync log**, **Activity log**, or **Error log** (see
   [step 13](#13-viewing-logs)).
 - **⚙ Settings**: **💾 Backup**, **🔒 App password**, **🔐 Lock**,
@@ -188,6 +190,25 @@ Click **Create pair**. The pair starts syncing automatically in "real time"; the
 > would delete more than a safety threshold of tracked files (for example, because
 > a source folder vanished), the app pauses and asks for explicit confirmation
 > before doing anything destructive.
+
+---
+
+## 9a. Device syncs (Computers) — optional
+
+To mirror a NAS folder with the folders Proton Drive syncs from your **computers**
+(the machines running the Proton Drive desktop app), open **🖥 Device syncs** in
+the top bar and create a device sync:
+
+1. Pick a **NAS / local folder**.
+2. Check **one or more computers**.
+3. Optionally turn on **auto add/remove new computers**.
+4. Click **Create device sync**.
+
+A computer can be in one device sync at a time, and only one sync can auto
+add/remove. Unlike a folder pair, a device sync resolves conflicts automatically:
+the newer version keeps its name and the older is saved as
+`filename (computer-name).ext`. See [USER_GUIDE.md](USER_GUIDE.md) for the full
+reference.
 
 ---
 

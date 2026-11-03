@@ -69,6 +69,19 @@ AES-256-GCM, keyed from a Docker secret (a mounted keyfile) rather than a
 passphrase baked into the image. Losing the keyfile means re-login, never a
 plaintext leak.
 
+### Security hardening
+
+- **Session gating.** The blob is written to disk only after login fully completes
+  (2FA + user key derivation); a partial blob is rejected on resume so a restart
+  mid-2FA never surfaces a half-authenticated session.
+- **SSRF guard.** Every outbound request is checked against a Proton-host
+  allowlist (HTTPS-only) before the authenticated client sends it, so the bearer
+  token / SRP credentials / refresh token can never reach a non-Proton host or
+  travel over plain HTTP. `PROTON_DRIVE_BASE_URL` is validated at startup.
+- **App password.** An optional self-hosted password (scrypt hash + HMAC-signed
+  session cookies) gates the dashboard, the API, and the SSE stream on top of the
+  Proton login.
+
 ## Crypto abstraction layer
 
 All direct cryptographic work is fenced into two modules:
@@ -107,6 +120,25 @@ feed is opaque or a source is unavailable:
 Each path is diffed to compute the minimal operation (add / modify / delete /
 rename) on the other side. Conflicts keep both copies: the local copy wins and
 the other side's version is preserved as `<name>.conflict-<timestamp>`.
+
+### Device syncs (Computers)
+
+A **device sync** links a NAS folder to the folders Proton Drive syncs from your
+computers ("Computers" devices). It is modeled as a group of **device pairs**: the
+same `pairs` table used for folder pairs, with two nullable columns (`device_uid`,
+`device_sync_id`) marking a member of a device sync (both NULL = a normal folder
+pair). A `device_syncs` row groups them (`local_dir`, `auto_add_remove`).
+
+Device pairs are resolved by the device's stable `rootFolderUid` (they skip the
+`findOrCreateFolderPath` re-resolution folder pairs use). A check-before-sync pass
+(`reconcileDeviceSyncs`) enumerates live devices and drops members whose device is
+gone (before per-pair sync, so an emptied device folder is never read as "delete
+all"), and auto-adds unclaimed devices for a sync with auto add/remove on.
+
+Device conflicts resolve automatically instead of freezing: the newer version (by
+Drive's server-side `modificationTime`, not the PC's clock) wins and the loser is
+preserved as `name (device-name).ext`. Regular folder pairs keep the manual-review
+flow.
 
 ### Deletion safety (catastrophic-delete protection)
 
