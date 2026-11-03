@@ -52,6 +52,21 @@ export interface Pair {
     dedupeEnabled: boolean;
     /** Min file size (bytes) for the duplicate scan; 0 = none (0-byte files are always skipped). */
     dedupeMinBytes: number;
+    /** Proton device uid when this pair syncs a Computers device (null = My Files pair). */
+    deviceUid: string | null;
+    /** Owning device-sync group id (null = My Files pair). */
+    deviceSyncId: string | null;
+}
+
+/** A device sync: one NAS folder mirrored to the root folders of one or more
+ *  Computers devices. Each member device is its own pair sharing this group's
+ *  localDir. */
+export interface DeviceSync {
+    id: string;
+    localDir: string;
+    /** Auto add/remove devices on each sync run (at most one sync may enable this). */
+    autoAddRemove: boolean;
+    createdAt: number;
 }
 
 interface NodeRow {
@@ -73,6 +88,15 @@ interface PairRow {
     last_sync_at: number | null;
     dedupe_enabled: number;
     dedupe_min_bytes: number;
+    device_uid: string | null;
+    device_sync_id: string | null;
+}
+
+interface DeviceSyncRow {
+    id: string;
+    local_dir: string;
+    auto_add_remove: number;
+    created_at: number;
 }
 
 function toNode(row: NodeRow): SyncNode {
@@ -97,6 +121,17 @@ function toPair(row: PairRow): Pair {
         lastSyncAt: row.last_sync_at ?? null,
         dedupeEnabled: !!row.dedupe_enabled,
         dedupeMinBytes: row.dedupe_min_bytes ?? 0,
+        deviceUid: row.device_uid ?? null,
+        deviceSyncId: row.device_sync_id ?? null,
+    };
+}
+
+function toDeviceSync(row: DeviceSyncRow): DeviceSync {
+    return {
+        id: row.id,
+        localDir: row.local_dir,
+        autoAddRemove: !!row.auto_add_remove,
+        createdAt: row.created_at,
     };
 }
 
@@ -200,6 +235,12 @@ export class SyncDB {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS device_syncs (
+                id TEXT PRIMARY KEY,
+                local_dir TEXT NOT NULL,
+                auto_add_remove INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
         `);
         // Fast lookup of a node by its Drive uid (event -> pair mapping).
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_nodes_drive_uid ON nodes(drive_uid)');
@@ -216,21 +257,29 @@ export class SyncDB {
         add('last_sync_at', 'INTEGER');
         add('dedupe_enabled', 'INTEGER NOT NULL DEFAULT 0');
         add('dedupe_min_bytes', 'INTEGER NOT NULL DEFAULT 0');
+        add('device_uid', 'TEXT');
+        add('device_sync_id', 'TEXT');
+        // A Computers device may belong to at most one device sync (enforced at the
+        // DB level; NULL device_uid = a regular My Files pair, and multiple NULLs
+        // are allowed by SQLite's partial-index semantics).
+        this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_pairs_device_uid ON pairs(device_uid) WHERE device_uid IS NOT NULL');
     }
 
     upsertPair(pair: Pair): void {
         this.db
             .prepare(
                 `
-                INSERT INTO pairs (id, local_dir, drive_folder_name, drive_folder_uid, last_sync_at, dedupe_enabled, dedupe_min_bytes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO pairs (id, local_dir, drive_folder_name, drive_folder_uid, last_sync_at, dedupe_enabled, dedupe_min_bytes, device_uid, device_sync_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     local_dir = excluded.local_dir,
                     drive_folder_name = excluded.drive_folder_name,
                     drive_folder_uid = excluded.drive_folder_uid,
                     last_sync_at = excluded.last_sync_at,
                     dedupe_enabled = excluded.dedupe_enabled,
-                    dedupe_min_bytes = excluded.dedupe_min_bytes
+                    dedupe_min_bytes = excluded.dedupe_min_bytes,
+                    device_uid = excluded.device_uid,
+                    device_sync_id = excluded.device_sync_id
                 `,
             )
             .run(
@@ -241,6 +290,8 @@ export class SyncDB {
                 pair.lastSyncAt,
                 pair.dedupeEnabled ? 1 : 0,
                 pair.dedupeMinBytes,
+                pair.deviceUid,
+                pair.deviceSyncId,
             );
     }
 
@@ -265,6 +316,39 @@ export class SyncDB {
         this.db.prepare('DELETE FROM dupe_ignored WHERE pair_id = ?').run(id);
         this.db.prepare('DELETE FROM conflicts WHERE pair_id = ?').run(id);
         this.db.prepare('DELETE FROM pairs WHERE id = ?').run(id);
+    }
+
+    upsertDeviceSync(ds: DeviceSync): void {
+        this.db
+            .prepare(
+                `INSERT INTO device_syncs (id, local_dir, auto_add_remove, created_at) VALUES (?, ?, ?, ?)
+                 ON CONFLICT(id) DO UPDATE SET local_dir = excluded.local_dir, auto_add_remove = excluded.auto_add_remove`,
+            )
+            .run(ds.id, ds.localDir, ds.autoAddRemove ? 1 : 0, ds.createdAt);
+    }
+
+    getDeviceSync(id: string): DeviceSync | undefined {
+        const row = this.db.prepare('SELECT * FROM device_syncs WHERE id = ?').get(id) as unknown as DeviceSyncRow | undefined;
+        return row ? toDeviceSync(row) : undefined;
+    }
+
+    listDeviceSyncs(): DeviceSync[] {
+        const rows = this.db.prepare('SELECT * FROM device_syncs ORDER BY created_at').all() as unknown as DeviceSyncRow[];
+        return rows.map(toDeviceSync);
+    }
+
+    /** Member pairs of a device sync (each member is a pair whose deviceUid is set). */
+    listDeviceSyncPairs(syncId: string): Pair[] {
+        const rows = this.db.prepare('SELECT * FROM pairs WHERE device_sync_id = ? ORDER BY id').all(syncId) as unknown as PairRow[];
+        return rows.map(toPair);
+    }
+
+    /** Remove a device sync: drop every member pair (and its nodes/conflicts/etc),
+     *  then the group row. Local files are left untouched. */
+    removeDeviceSync(id: string): void {
+        const memberIds = this.db.prepare('SELECT id FROM pairs WHERE device_sync_id = ?').all(id) as unknown as { id: string }[];
+        for (const m of memberIds) this.removePair(m.id);
+        this.db.prepare('DELETE FROM device_syncs WHERE id = ?').run(id);
     }
 
     getNode(pairId: string, relPath: string): SyncNode | undefined {

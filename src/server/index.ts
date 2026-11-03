@@ -1,5 +1,5 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { stat, statfs } from 'node:fs/promises';
 import { createServer as createHttpServer } from 'node:http';
@@ -57,6 +57,10 @@ interface PairBody {
 
 function pairIdFor(localDir: string, driveFolderName: string): string {
     return createHash('sha256').update(`${localDir}\n${driveFolderName}`).digest('hex').slice(0, 16);
+}
+
+function devicePairId(localDir: string, deviceUid: string): string {
+    return createHash('sha256').update(`device\n${localDir}\n${deviceUid}`).digest('hex').slice(0, 16);
 }
 
 function syncDbPath(): string {
@@ -162,9 +166,15 @@ async function runSync(pairId: string, allowDeletions = false, delta: DeltaInput
 
         const session = authService.getSession();
         // Re-resolve the Drive folder each cycle (robust against renames/recreates).
-        const root = await session.sdk.getMyFilesRootFolder();
-        const driveFolderUid = await findOrCreateFolderPath(session.sdk, root.uid, pair.driveFolderName);
-        db.upsertPair({ ...pair, driveFolderUid });
+        // Device pairs point at a Computers device root folder (a stable uid that is
+        // NOT under My Files), so they are never re-resolved: findOrCreateFolderPath
+        // would create a bogus folder under My Files instead of the device folder.
+        let driveFolderUid = pair.driveFolderUid;
+        if (!pair.deviceUid) {
+            const root = await session.sdk.getMyFilesRootFolder();
+            driveFolderUid = await findOrCreateFolderPath(session.sdk, root.uid, pair.driveFolderName);
+            db.upsertPair({ ...pair, driveFolderUid });
+        }
 
         const onProgress: ProgressHandler = broadcast;
         const common = {
@@ -466,6 +476,7 @@ async function signOutAndReset(): Promise<void> {
             }
             db.removePair(pair.id);
         }
+        for (const ds of db.listDeviceSyncs()) db.removeDeviceSync(ds.id);
     } finally {
         db.close();
     }
@@ -765,6 +776,8 @@ app.post('/api/pairs', requireAuth, async (req, res) => {
             lastSyncAt: null,
             dedupeEnabled: !!dedupeEnabled,
             dedupeMinBytes: clampDedupeMinBytes(dedupeMinBytes),
+            deviceUid: null,
+            deviceSyncId: null,
         };
         db.upsertPair(pair);
         res.json({ pair });
@@ -812,6 +825,99 @@ function getPairOrNull(id: string): Pair | undefined {
         db.close();
     }
 }
+
+interface DeviceSyncBody {
+    localDir?: string;
+    deviceUids?: string[];
+    autoAddRemove?: boolean;
+}
+
+// ---- device syncs (a local folder mirrored to N Computers device root folders) ----
+
+app.get('/api/device-syncs', requireAuth, (_req, res) => {
+    const db = new SyncDB(syncDbPath());
+    try {
+        const syncs = db.listDeviceSyncs().map((s) => ({
+            ...s,
+            devices: db.listDeviceSyncPairs(s.id).map((p) => ({
+                pairId: p.id,
+                deviceUid: p.deviceUid,
+                name: p.driveFolderName,
+                lastSyncAt: p.lastSyncAt,
+            })),
+        }));
+        res.json({ syncs });
+    } finally {
+        db.close();
+    }
+});
+
+app.post('/api/device-syncs', requireAuth, async (req, res) => {
+    const { localDir, deviceUids, autoAddRemove } = (req.body ?? {}) as DeviceSyncBody;
+    if (!localDir || !isSafeLocalPath(localDir)) {
+        const vols = dataMountPaths().join(', ');
+        res.status(400).json({ error: `Local folder must be inside a mounted volume (${vols}).` });
+        return;
+    }
+    const uids = [...new Set(deviceUids ?? [])];
+    if (uids.length === 0) {
+        res.status(400).json({ error: 'Select at least one device.' });
+        return;
+    }
+    const db = new SyncDB(syncDbPath());
+    try {
+        const session = authService.getSession();
+        const devices = await listDevices(session.sdk);
+        const byUid = new Map(devices.map((d) => [d.uid, d]));
+        const missing = uids.filter((u) => !byUid.has(u));
+        if (missing.length > 0) {
+            res.status(400).json({ error: `Unknown device(s): ${missing.join(', ')}` });
+            return;
+        }
+        // A device may belong to at most one device sync.
+        const claimed = db.listPairs().filter((p) => p.deviceUid && uids.includes(p.deviceUid));
+        if (claimed.length > 0) {
+            res.status(409).json({ error: `${claimed.length} selected device(s) already belong to another device sync.` });
+            return;
+        }
+        // At most one device sync may enable auto add/remove.
+        if (autoAddRemove && db.listDeviceSyncs().some((s) => s.autoAddRemove)) {
+            res.status(409).json({ error: 'Another device sync already has auto add/remove enabled.' });
+            return;
+        }
+
+        const syncId = randomUUID();
+        for (const uid of uids) {
+            const dev = byUid.get(uid)!;
+            db.upsertPair({
+                id: devicePairId(localDir, uid),
+                localDir,
+                driveFolderName: dev.name,
+                driveFolderUid: dev.rootFolderUid,
+                lastSyncAt: null,
+                dedupeEnabled: false,
+                dedupeMinBytes: 0,
+                deviceUid: uid,
+                deviceSyncId: syncId,
+            });
+        }
+        const sync = { id: syncId, localDir, autoAddRemove: !!autoAddRemove, createdAt: Date.now() };
+        db.upsertDeviceSync(sync);
+        res.json({ sync });
+    } finally {
+        db.close();
+    }
+});
+
+app.delete('/api/device-syncs/:id', requireAuth, (req, res) => {
+    const db = new SyncDB(syncDbPath());
+    try {
+        db.removeDeviceSync(req.params.id as string);
+        res.json({ ok: true });
+    } finally {
+        db.close();
+    }
+});
 
 app.get('/api/pairs/:id/trash', requireAuth, (req, res) => {
     const pair = getPairOrNull(req.params.id as string);
