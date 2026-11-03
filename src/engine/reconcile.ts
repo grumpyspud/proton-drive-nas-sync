@@ -286,7 +286,10 @@ export class ReconcileContext {
      *  not the PC's local clock; on an unknown Drive mtime, local (NAS) wins. */
     async autoResolveDeviceConflict(relPath: string, D: DriveEntry, L: LocalEntry, localSha1: string, driveFp: string | null): Promise<void> {
         const deviceName = this.deviceName ?? 'device';
-        const driveMt = driveMtime(D.node);
+        // "Drive's stored mtimeMs" = node.modificationTime (server-side), NOT the
+        // PC's claimed modification time (a wrong local clock would skew the
+        // winner). Fall back to claimed only when the server time is absent.
+        const driveMt = D.node?.modificationTime?.getTime?.() ?? driveMtime(D.node);
         const localWins = driveMt == null || L.mtimeMs >= driveMt;
         let loserRel = withDeviceSuffix(relPath, deviceName);
         if (existsSync(path.join(this.localDir, loserRel))) {
