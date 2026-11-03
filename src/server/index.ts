@@ -861,8 +861,10 @@ app.post('/api/device-syncs', requireAuth, async (req, res) => {
         return;
     }
     const uids = [...new Set(deviceUids ?? [])];
-    if (uids.length === 0) {
-        res.status(400).json({ error: 'Select at least one device.' });
+    // A sync may start empty ONLY when auto add/remove is on (it fills in computers
+    // as they register). Without auto, an empty sync can never do anything.
+    if (uids.length === 0 && !autoAddRemove) {
+        res.status(400).json({ error: 'Select at least one computer, or enable auto add/remove to add computers automatically.' });
         return;
     }
     const db = new SyncDB(syncDbPath());

@@ -31,8 +31,8 @@ export function CreateDeviceSyncModal({ volumes, claimedUids, autoAddTaken, onCr
             setError('Choose a NAS folder first.');
             return;
         }
-        if (selected.length === 0) {
-            setError('Select at least one computer.');
+        if (selected.length === 0 && !autoAdd) {
+            setError('Select at least one computer, or enable auto add/remove.');
             return;
         }
         setBusy(true);
@@ -66,6 +66,9 @@ export function CreateDeviceSyncModal({ volumes, claimedUids, autoAddTaken, onCr
                 <div className="field">
                     <span>Computers to sync</span>
                     <DevicePicker selected={selected} onChange={setSelected} disabledUids={claimedUids} />
+                    {autoAdd && selected.length === 0 && (
+                        <div className="muted">No computers selected - auto add/remove will add them as they appear.</div>
+                    )}
                 </div>
 
                 <div className="field">
@@ -86,7 +89,7 @@ export function CreateDeviceSyncModal({ volumes, claimedUids, autoAddTaken, onCr
                     <button className="btn btn-ghost" onClick={onClose} disabled={busy}>
                         Cancel
                     </button>
-                    <button className="btn btn-primary" onClick={() => void submit()} disabled={busy || !localDir.trim() || selected.length === 0}>
+                    <button className="btn btn-primary" onClick={() => void submit()} disabled={busy || !localDir.trim() || (selected.length === 0 && !autoAdd)}>
                         Create device sync
                     </button>
                 </div>
