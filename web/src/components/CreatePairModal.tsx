@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { addPair } from '../api';
-import type { LocalVolume } from '../types';
+import type { LocalVolume, Pair } from '../types';
 import { FolderBrowser } from './FolderBrowser';
 
 function normalizeAbs(p: string): string {
@@ -27,16 +27,28 @@ function isSafeLocalDir(localDir: string, volumes: LocalVolume[]): boolean {
 
 interface Props {
     volumes: LocalVolume[];
+    pairs: Pair[];
     onCreated: () => Promise<void> | void;
     onClose: () => void;
 }
 
-export function CreatePairModal({ volumes, onCreated, onClose }: Props) {
+export function CreatePairModal({ volumes, pairs, onCreated, onClose }: Props) {
     const [localDir, setLocalDir] = useState('');
     const [folder, setFolder] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const safe = isSafeLocalDir(localDir, volumes);
+
+    // Overlap detection against existing pairs (informational, non-blocking).
+    const normLocal = localDir.trim() ? normalizeAbs(localDir.trim()) : '';
+    const driveName = folder.trim();
+    const overlapReady = normLocal !== '';
+    const sameLocal = overlapReady
+        ? pairs.filter((p) => normalizeAbs(p.localDir) === normLocal && p.driveFolderName !== driveName)
+        : [];
+    const sameDrive = overlapReady
+        ? pairs.filter((p) => p.driveFolderName === driveName && normalizeAbs(p.localDir) !== normLocal)
+        : [];
 
     // Default to the single bind mount; with multiple mounts the drop-down
     // still preselects the first and the user can switch.
@@ -88,6 +100,16 @@ export function CreatePairModal({ volumes, onCreated, onClose }: Props) {
                     </div>
                 </div>
 
+                {sameDrive.length > 0 && (
+                    <div className="alert">
+                        ⚠ This Drive folder is already synced by {sameDrive.length > 1 ? `${sameDrive.length} other pairs` : 'another pair'} from a different local folder. Two local folders writing to one Drive folder will merge and conflict over the same files.
+                    </div>
+                )}
+                {sameLocal.length > 0 && (
+                    <div className="alert-warn">
+                        ⚠ This local folder is already synced by {sameLocal.length > 1 ? `${sameLocal.length} other pairs` : 'another pair'} to a different Drive folder. Local changes will mirror to all of them.
+                    </div>
+                )}
                 {!safe && (
                     <div className="alert-warn">
                         ⚠ This folder is not on a mounted volume. Files would be written inside the
