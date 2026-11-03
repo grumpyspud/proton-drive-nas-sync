@@ -124,6 +124,18 @@ export function removeDeviceSync(id: string): Promise<{ ok: boolean }> {
     return request(`/api/device-syncs/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
+export function addDevicesToSync(id: string, deviceUids: string[]): Promise<{ ok: boolean; added: string[] }> {
+    return request(`/api/device-syncs/${encodeURIComponent(id)}/devices`, { method: 'POST', body: JSON.stringify({ deviceUids }) });
+}
+
+export function removeDeviceFromSync(id: string, deviceUid: string): Promise<{ ok: boolean }> {
+    return request(`/api/device-syncs/${encodeURIComponent(id)}/devices/${encodeURIComponent(deviceUid)}`, { method: 'DELETE' });
+}
+
+export function setDeviceSyncAuto(id: string, autoAddRemove: boolean): Promise<{ ok: boolean; autoAddRemove: boolean }> {
+    return request(`/api/device-syncs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ autoAddRemove }) });
+}
+
 export interface PairSettings {
     dedupeEnabled?: boolean;
     dedupeMinBytes?: number;

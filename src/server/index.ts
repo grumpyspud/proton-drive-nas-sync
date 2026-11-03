@@ -14,9 +14,9 @@ import { dataMountPaths, isSafeLocalPath } from '../fs/volumes';
 import { resolveTls, type TlsConfig } from './tls';
 import { findFolder, findOrCreateFolderPath, mkdirDrive } from '../fs/folders';
 import { nodeName } from '../fs/files';
-import { listDevices } from '../fs/devices';
+import { listDevices, type DeviceInfo } from '../fs/devices';
 import { clearTrash, deleteTrashItem, listTrash, restoreTrashItem } from '../fs/trash';
-import { NodeType } from '@protontech/drive-sdk';
+import { NodeType, type ProtonDriveClient } from '@protontech/drive-sdk';
 import { syncOnce, SyncAbortedError, DEFAULT_TRANSFER_CONCURRENCY, MAX_TRANSFER_CONCURRENCY } from '../engine/sync';
 import { syncDelta } from '../engine/delta';
 import { diffLocal, localDiffEmpty, type LocalDiff } from '../engine/localDiff';
@@ -61,6 +61,22 @@ function pairIdFor(localDir: string, driveFolderName: string): string {
 
 function devicePairId(localDir: string, deviceUid: string): string {
     return createHash('sha256').update(`device\n${localDir}\n${deviceUid}`).digest('hex').slice(0, 16);
+}
+
+/** Build a device member pair. Shared by create, add-device, and the auto
+ *  add/remove reconciliation so all three write identical rows. */
+function createDevicePair(localDir: string, syncId: string, dev: DeviceInfo): Pair {
+    return {
+        id: devicePairId(localDir, dev.uid),
+        localDir,
+        driveFolderName: dev.name,
+        driveFolderUid: dev.rootFolderUid,
+        lastSyncAt: null,
+        dedupeEnabled: false,
+        dedupeMinBytes: 0,
+        deviceUid: dev.uid,
+        deviceSyncId: syncId,
+    };
 }
 
 function syncDbPath(): string {
@@ -891,18 +907,7 @@ app.post('/api/device-syncs', requireAuth, async (req, res) => {
 
         const syncId = randomUUID();
         for (const uid of uids) {
-            const dev = byUid.get(uid)!;
-            db.upsertPair({
-                id: devicePairId(localDir, uid),
-                localDir,
-                driveFolderName: dev.name,
-                driveFolderUid: dev.rootFolderUid,
-                lastSyncAt: null,
-                dedupeEnabled: false,
-                dedupeMinBytes: 0,
-                deviceUid: uid,
-                deviceSyncId: syncId,
-            });
+            db.upsertPair(createDevicePair(localDir, syncId, byUid.get(uid)!));
         }
         const sync = { id: syncId, localDir, autoAddRemove: !!autoAddRemove, createdAt: Date.now() };
         db.upsertDeviceSync(sync);
@@ -917,6 +922,94 @@ app.delete('/api/device-syncs/:id', requireAuth, (req, res) => {
     try {
         db.removeDeviceSync(req.params.id as string);
         res.json({ ok: true });
+    } finally {
+        db.close();
+    }
+});
+
+app.post('/api/device-syncs/:id/devices', requireAuth, async (req, res) => {
+    const db = new SyncDB(syncDbPath());
+    try {
+        const sync = db.getDeviceSync(req.params.id as string);
+        if (!sync) {
+            res.status(404).json({ error: 'Device sync not found.' });
+            return;
+        }
+        const { deviceUids } = (req.body ?? {}) as { deviceUids?: string[] };
+        const uids = [...new Set(deviceUids ?? [])];
+        if (uids.length === 0) {
+            res.status(400).json({ error: 'Select at least one computer.' });
+            return;
+        }
+        const devices = await listDevices(authService.getSession().sdk);
+        const byUid = new Map(devices.map((d) => [d.uid, d]));
+        const missing = uids.filter((u) => !byUid.has(u));
+        if (missing.length > 0) {
+            res.status(400).json({ error: `Unknown device(s): ${missing.join(', ')}` });
+            return;
+        }
+        // A device belongs to at most one sync; re-adding a current member is a no-op.
+        const claimedElsewhere = db.listPairs().filter((p) => p.deviceUid && p.deviceSyncId !== sync.id && uids.includes(p.deviceUid));
+        if (claimedElsewhere.length > 0) {
+            res.status(409).json({ error: `${claimedElsewhere.length} selected device(s) already belong to another device sync.` });
+            return;
+        }
+        const members = new Set<string>(db.listDeviceSyncPairs(sync.id).map((p) => p.deviceUid).filter((u): u is string => u !== null));
+        const added: string[] = [];
+        for (const uid of uids) {
+            if (members.has(uid)) continue;
+            db.upsertPair(createDevicePair(sync.localDir, sync.id, byUid.get(uid)!));
+            added.push(uid);
+        }
+        res.json({ ok: true, added });
+    } finally {
+        db.close();
+    }
+});
+
+app.delete('/api/device-syncs/:id/devices/:deviceUid', requireAuth, (req, res) => {
+    const db = new SyncDB(syncDbPath());
+    try {
+        const sync = db.getDeviceSync(req.params.id as string);
+        if (!sync) {
+            res.status(404).json({ error: 'Device sync not found.' });
+            return;
+        }
+        const member = db.listDeviceSyncPairs(sync.id).find((p) => p.deviceUid === req.params.deviceUid);
+        if (!member) {
+            res.status(404).json({ error: 'Device is not part of this sync.' });
+            return;
+        }
+        // Drop the pair's DB state; local files are left in place.
+        db.removePair(member.id);
+        res.json({ ok: true });
+    } finally {
+        db.close();
+    }
+});
+
+app.patch('/api/device-syncs/:id', requireAuth, (req, res) => {
+    const db = new SyncDB(syncDbPath());
+    try {
+        const sync = db.getDeviceSync(req.params.id as string);
+        if (!sync) {
+            res.status(404).json({ error: 'Device sync not found.' });
+            return;
+        }
+        const { autoAddRemove } = (req.body ?? {}) as { autoAddRemove?: boolean };
+        if (typeof autoAddRemove !== 'boolean') {
+            res.status(400).json({ error: 'autoAddRemove must be a boolean.' });
+            return;
+        }
+        if (autoAddRemove) {
+            const other = db.listDeviceSyncs().find((s) => s.autoAddRemove && s.id !== sync.id);
+            if (other) {
+                res.status(409).json({ error: 'Another device sync already has auto add/remove enabled.' });
+                return;
+            }
+        }
+        db.upsertDeviceSync({ ...sync, autoAddRemove });
+        res.json({ ok: true, autoAddRemove });
     } finally {
         db.close();
     }
@@ -1512,6 +1605,43 @@ function lastEventIdKey(treeEventScopeId: string): string {
 // full-scans again, which is also what repopulates the pruning baseline.
 const lastFullScanAt = new Map<string, number>();
 
+/** Enumerate Computers devices and reconcile every device sync: drop member
+ *  pairs whose device no longer exists, and for any sync with auto add/remove
+ *  enabled, add a fresh pair for each unclaimed device. Runs once per tick,
+ *  before the per-pair check-then-sync. */
+async function reconcileDeviceSyncs(db: SyncDB, sdk: ProtonDriveClient): Promise<{ added: number; removed: number }> {
+    const devices = await listDevices(sdk);
+    const byUid = new Map<string, DeviceInfo>();
+    for (const d of devices) byUid.set(d.uid, d);
+
+    const claimed = new Set<string>();
+    for (const p of db.listPairs()) if (p.deviceUid) claimed.add(p.deviceUid);
+
+    let added = 0;
+    let removed = 0;
+
+    for (const sync of db.listDeviceSyncs()) {
+        for (const member of db.listDeviceSyncPairs(sync.id)) {
+            if (member.deviceUid && !byUid.has(member.deviceUid)) {
+                db.removePair(member.id);
+                claimed.delete(member.deviceUid);
+                removed++;
+            }
+        }
+        if (sync.autoAddRemove) {
+            for (const d of devices) {
+                if (!claimed.has(d.uid)) {
+                    db.upsertPair(createDevicePair(sync.localDir, sync.id, d));
+                    claimed.add(d.uid);
+                    added++;
+                }
+            }
+        }
+    }
+
+    return { added, removed };
+}
+
 async function schedulerTick(): Promise<void> {
     // Never auto-trigger while a sync is already running (manual or scheduled),
     // while paused, or while a deletion confirmation is awaiting the user.
@@ -1527,6 +1657,20 @@ async function schedulerTick(): Promise<void> {
 
     const db = new SyncDB(syncDbPath());
     try {
+        // Reconcile device syncs first. This may add or drop pairs, and it must
+        // run even when there are zero pairs today (an empty auto add/remove
+        // sync populates itself from newly registered devices).
+        if (db.listDeviceSyncs().length > 0) {
+            try {
+                const r = await reconcileDeviceSyncs(db, authService.getSession().sdk);
+                if (r.added > 0 || r.removed > 0) {
+                    logger.info(`devices: +${r.added} -${r.removed} reconciled`);
+                }
+            } catch (error) {
+                logger.warn(`Device reconciliation failed: ${(error as Error).message ?? error}`);
+            }
+        }
+
         const all = db.listPairs();
 
         // No pairs at all: skip the whole tick.
