@@ -935,6 +935,22 @@ input:focus {
     gap: 6px;
 }
 
+.browser input[readonly] {
+    cursor: default;
+    background: var(--bg);
+}
+
+.browser-volume {
+    width: 100%;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink-600);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 7px 9px;
+}
+
 .browser-list {
     display: flex;
     flex-direction: column;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { addPair } from '../api';
 import type { LocalVolume } from '../types';
 import { FolderBrowser } from './FolderBrowser';
@@ -38,6 +38,13 @@ export function CreatePairModal({ volumes, onCreated, onClose }: Props) {
     const [error, setError] = useState<string | null>(null);
     const safe = isSafeLocalDir(localDir, volumes);
 
+    // Default to the single bind mount; with multiple mounts the drop-down
+    // still preselects the first and the user can switch.
+    useEffect(() => {
+        const first = volumes[0];
+        if (localDir === '' && first) setLocalDir(first.path);
+    }, [volumes, localDir]);
+
     async function submit() {
         if (!localDir.trim()) {
             setError('Choose a NAS folder first.');
@@ -73,7 +80,7 @@ export function CreatePairModal({ volumes, onCreated, onClose }: Props) {
                 <div className="create-grid">
                     <div className="field">
                         <span>NAS / local folder</span>
-                        <FolderBrowser mode="local" value={localDir} onChange={setLocalDir} placeholder="/data" />
+                        <FolderBrowser mode="local" value={localDir} onChange={setLocalDir} placeholder="/data" volumes={volumes.map((v) => v.path)} />
                     </div>
                     <div className="field">
                         <span>Proton Drive folder</span>

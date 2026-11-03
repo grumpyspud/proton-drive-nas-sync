@@ -7,6 +7,8 @@ interface Props {
     value: string;
     placeholder?: string;
     onChange: (path: string) => void;
+    /** Bind-mount paths the local picker can browse (unused in drive mode). */
+    volumes?: string[];
 }
 
 /**
@@ -19,7 +21,7 @@ interface Props {
  * Both modes add a "New folder" action to create a subfolder of the current
  * path (on the local filesystem or on Drive, respectively).
  */
-export function FolderBrowser({ mode, value, placeholder, onChange }: Props) {
+export function FolderBrowser({ mode, value, placeholder, onChange, volumes }: Props) {
     const [listing, setListing] = useState<DirListing | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -76,9 +78,30 @@ export function FolderBrowser({ mode, value, placeholder, onChange }: Props) {
         }
     }
 
+    function currentVolume(): string {
+        if (!volumes || volumes.length === 0) return '';
+        for (const v of volumes) {
+            const vp = v.endsWith('/') ? v.slice(0, -1) : v;
+            if (value === vp || value.startsWith(`${vp}/`)) return v;
+        }
+        return volumes[0] ?? '';
+    }
+
     return (
         <div className="browser">
-            <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} spellCheck={false} />
+            <input value={value} placeholder={placeholder} readOnly spellCheck={false} title="Navigate using the list below" />
+            {mode === 'local' && volumes && volumes.length > 1 && (
+                <select
+                    className="browser-volume"
+                    value={currentVolume()}
+                    onChange={(e) => onChange(e.target.value)}
+                    title="Select a mounted volume"
+                >
+                    {volumes.map((v) => (
+                        <option key={v} value={v}>{v}</option>
+                    ))}
+                </select>
+            )}
             {mode === 'drive' && (
                 <button
                     type="button"

@@ -1,5 +1,6 @@
 import { NodeType, type ProtonDriveClient } from '@protontech/drive-sdk';
 import { nodeName } from './files';
+import { isReservedDirName } from './reserved';
 
 /**
  * Finds the uid of a folder named `name` directly under `parentUid`, or
@@ -45,6 +46,7 @@ export async function mkdirDrive(sdk: ProtonDriveClient, parentPath: string, nam
     const clean = (name ?? '').trim();
     if (!clean) throw new Error('Folder name is required');
     if (/[\\/]/.test(clean) || clean === '.' || clean === '..') throw new Error('Invalid folder name');
+    if (isReservedDirName(clean)) throw new Error('Reserved folder name');
 
     const root = await sdk.getMyFilesRootFolder();
     const segments = (parentPath ?? '').split('/').map((s) => s.trim()).filter(Boolean);

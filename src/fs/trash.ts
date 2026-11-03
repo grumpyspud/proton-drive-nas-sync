@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fsRoot } from './browse';
+import { dataMountPaths, isSafeLocalPath } from './volumes';
 
 export interface TrashItem {
     ts: number;
@@ -14,14 +14,11 @@ function trashRoot(localDir: string): string {
     return join(localDir, '.pdn-trash');
 }
 
-/** Resolve + confine a pair's localDir under fsRoot(). */
+/** Resolve + confine a pair's localDir under a bind-mounted data volume. */
 function resolveLocalDir(localDir: string): string {
-    const root = fsRoot();
-    const abs = isAbsolute(localDir) ? resolve(localDir) : resolve(root, localDir);
-    const rel = relative(root, abs);
-    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
-        throw new Error('Pair folder is outside the allowed root');
-    }
+    const first = dataMountPaths()[0] ?? '/data';
+    const abs = isAbsolute(localDir) ? resolve(localDir) : resolve(first, localDir);
+    if (!isSafeLocalPath(abs)) throw new Error('Pair folder is outside the allowed root');
     return abs;
 }
 
