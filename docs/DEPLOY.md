@@ -41,8 +41,8 @@ clone works without any authentication.)
 docker compose up -d
 ```
 
-Then open `https://<host>:8787`, log in with your Proton credentials (2FA and a
-second-tier mailbox password are supported), and create a folder pair. (The UI
+Then open `https://<host>:8787`, press **Sign in with Proton** (you sign in on
+Proton's own site, so the app never sees your password), and create a folder pair. (The UI
 serves HTTPS by default: see [HTTPS](#https).)
 
 ### Example compose override for a NAS
@@ -161,8 +161,8 @@ already terminates TLS), set `PDN_HTTP: "true"`.
 - **SSRF guard.** Outbound requests are restricted to Proton-owned hosts over
   HTTPS. The session token is never sent to a non-Proton host or over plain HTTP,
   and an unsafe `PROTON_DRIVE_BASE_URL` stops the app at startup.
-- **Session gating.** The encrypted session blob is written only after login fully
-  completes; a partial blob is rejected on resume, so a restart mid-2FA never
+- **Session gating.** The encrypted session blob is written only after sign-in fully
+  completes; a partial blob is rejected on resume, so a restart mid-sign-in never
   surfaces a half-authenticated session.
 - **Exposure.** Even with an app password, put the app behind a reverse proxy
   with auth (or restrict to Tailscale) before exposing it beyond your LAN.

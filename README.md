@@ -21,9 +21,10 @@ and Proton Drive.
 - **Deletion safety**: source-availability gate, a deletion-rate tripwire, and
   trash-before-delete (Drive `trashNodes` / local recycle) so a missing folder or
   drive can never wipe your data.
-- **Web UI**: Modern style login (SRP + optional 2FA + optional mailbox
-  password), folder-pair manager, and a live sync dashboard with progress bars
-  (files processed + bytes + network rate), storage usage, and low-space warnings.
+- **Web UI**: browser sign-in on Proton's own site (so the app never sees your
+  password, 2FA code or mailbox password), folder-pair manager, and a live sync
+  dashboard with progress bars (files processed + bytes + network rate), storage
+  usage, and low-space warnings.
 - **"Real-time" sync**: every pair syncs continuously - additions, edits, and
   deletions on either side are mirrored automatically, with a manual **Sync**
   button for an immediate run.
@@ -37,7 +38,7 @@ and Proton Drive.
   items in your Proton Drive trash from the dashboard.
 - **Configurable concurrency**: 1–4 parallel transfers.
 - **Encrypted-at-rest credentials**: only an AES-256-GCM encrypted session blob
-  is persisted; passwords are never stored.
+  is persisted; your Proton password never reaches the app.
 - **Hardened by default**: an optional app password (on top of Proton sign-in)
   gates the dashboard and API; the session blob is only written after login fully
   completes; and outbound requests are restricted to Proton-owned hosts over
@@ -47,7 +48,8 @@ and Proton Drive.
 
 - **TypeScript / Node.js** backend and **React** web UI.
 - Built on the official Proton Drive SDK (`@protontech/drive-sdk`, MIT), with the
-  account/auth module vendored and extended for 2FA + two-password login.
+  account/auth module vendored; sign-in uses its browser sign-in ("session fork"),
+  the same flow as Proton's own Drive CLI.
 - Crypto is behind a swappable `CryptoBackend` abstraction, ready for Proton's
   upcoming crypto-model migration.
 - Bidirectional sync is implemented on the SDK's client primitives, since the

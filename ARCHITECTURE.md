@@ -27,7 +27,7 @@ Proton Drive. It is written in TypeScript on Node.js.
 │  a new backend after the model migration                  │
 ├──────────────────────────────────────────────────────────┤
 │  Auth / Session layer (implemented here, not by the SDK)  │
-│  SRP-6a login · TOTP 2FA · two-password mailbox unlock    │
+│  browser sign-in on proton.me (Proton session fork)       │
 │  token refresh · encrypted session store                  │
 ├──────────────────────────────────────────────────────────┤
 │  Proton Drive SDK (@protontech/drive-sdk)                 │
@@ -38,8 +38,8 @@ Proton Drive. It is written in TypeScript on Node.js.
 ## Key facts that shaped this design
 
 1. **The SDK is not auth.** The official SDK "does not include: authentication
-   or login flows, session management, user address provider." Those are built
-   in the Auth/Session layer here.
+   or login flows, session management, user address provider." Those come from
+   Proton's incubating account module (vendored) and the Auth/Session layer here.
 2. **The SDK has no Sync module yet.** The bidirectional sync engine is built
    on the SDK's client primitives (list, upload, download, move, trash), with
    change detection by polling the Drive event feed and stat-scanning the local
@@ -53,27 +53,28 @@ Proton Drive. It is written in TypeScript on Node.js.
 The SDK expects an already-authenticated HTTP client and an unlocked account
 (keyrings). This project is responsible for producing both:
 
-- **Login**: SRP-6a handshake against Proton's auth API.
-- **2FA**: optional TOTP code.
-- **Two-password mode**: optional second (mailbox) password used to derive the
-  key passphrase and unlock the account keyrings.
-- **Resume**: persists the *session* (refresh token + salted key passphrase),
-  not the raw passwords, so the daemon can reconnect without re-entering
-  credentials.
+- **Sign-in**: browser sign-in ("session fork") via the vendored account
+  module's `Auth.authViaWeb`, the same flow Proton's own Drive CLI uses. The user
+  signs in on `account.proton.me` (2FA, security keys, mailbox password and
+  CAPTCHA are all handled there); Proton returns a new session plus the key
+  passphrase, encrypted with a one-time key carried only in the sign-in link's
+  `#fragment`.
+- **Resume**: persists the *session* (refresh token + salted key passphrase) so
+  the daemon can reconnect without signing in again.
 
 ### Credential storage (security requirement)
 
-Raw passwords (login, 2FA, mailbox) are held in memory only during sign-in and
-are never written to disk. What is persisted is an **encrypted session blob**,
+The app never receives the login password, 2FA code, or mailbox password: they
+are entered on Proton's site only. What is persisted is an **encrypted session blob**,
 AES-256-GCM, keyed from a Docker secret (a mounted keyfile) rather than a
 passphrase baked into the image. Losing the keyfile means re-login, never a
 plaintext leak.
 
 ### Security hardening
 
-- **Session gating.** The blob is written to disk only after login fully completes
-  (2FA + user key derivation); a partial blob is rejected on resume so a restart
-  mid-2FA never surfaces a half-authenticated session.
+- **Session gating.** The blob is written to disk only after sign-in fully
+  completes (session + key passphrase received); a partial blob is rejected on
+  resume so a restart mid-sign-in never surfaces a half-authenticated session.
 - **SSRF guard.** Every outbound request is checked against a Proton-host
   allowlist (HTTPS-only) before the authenticated client sends it, so the bearer
   token / SRP credentials / refresh token can never reach a non-Proton host or

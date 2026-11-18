@@ -43,27 +43,28 @@ export interface AuthStatus {
     uid?: string;
 }
 
-export interface LoginResult {
-    authenticated: boolean;
-    twoFactorRequired?: boolean;
-    mailboxPasswordRequired?: boolean;
-    humanVerificationRequired?: boolean;
-    webUrl?: string;
-    humanVerificationToken?: string;
-    methods?: string[];
-    uid?: string;
-    error?: string;
-}
-
 export function getAuthStatus(): Promise<AuthStatus> {
     return request<AuthStatus>('/api/auth/status');
 }
 
-export function login(username: string, password: string, twoFactorCode?: string, mailboxPassword?: string, humanVerificationToken?: string): Promise<LoginResult> {
-    return request<LoginResult>('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ username, password, twoFactorCode, mailboxPassword, humanVerificationToken }),
-    });
+export interface WebLoginState {
+    status: 'idle' | 'pending' | 'authenticated' | 'failed' | 'cancelled';
+    startedAt?: number;
+    uid?: string;
+    error?: string;
+}
+
+/** Start a browser sign-in; returns the account.proton.me link to open. */
+export function startWebLogin(): Promise<{ signInUrl: string }> {
+    return request('/api/auth/web/start', { method: 'POST' });
+}
+
+export function getWebLoginState(): Promise<WebLoginState> {
+    return request<WebLoginState>('/api/auth/web/status');
+}
+
+export function cancelWebLogin(): Promise<{ ok: boolean }> {
+    return request('/api/auth/web/cancel', { method: 'POST' });
 }
 
 export function logout(): Promise<{ ok: boolean }> {

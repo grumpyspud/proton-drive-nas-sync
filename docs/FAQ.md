@@ -100,19 +100,21 @@ review (see below).
 
 ## How does authentication work?
 
-Proton's SDK deliberately ships **without** login or session management, so the
-app implements it:
+Proton's Drive SDK ships **without** login or session management. The app uses
+Proton's (incubating) account module for that, vendored in this repo:
 
-- **Login**: a Secure Remote Password (SRP-6a) handshake against Proton's auth
-  API. SRP means your password is never sent to Proton in the clear.
-- **2FA**: an optional TOTP code, supported in the login flow.
-- **Two-password mode**: if the account has a separate mailbox password, the
-  app uses it to derive the key passphrase and unlock the account keyrings.
-- **Session resume**: after login, only the *session* is persisted (refresh
+- **Sign-in in your browser**: the app starts Proton's browser sign-in (a
+  "session fork", the same flow Proton's own Drive CLI uses). You sign in on
+  `account.proton.me`, including your 2FA code or security key, mailbox password,
+  and any CAPTCHA, and Proton hands the app a new session. The key passphrase that
+  unlocks your account keyrings arrives encrypted with a one-time key that only
+  exists in the sign-in link, so **the app never sees your password, 2FA code, or
+  mailbox password**.
+- **Session resume**: after sign-in, only the *session* is persisted (refresh
   token + salted key passphrase) in an **AES-256-GCM encrypted blob**, keyed from
-  a Docker secret/keyfile (or `PDN_ENCRYPTION_KEY`). The raw login, 2FA, and
-  mailbox passwords exist in memory only during sign-in and are never written to
-  disk.
+  a Docker secret/keyfile (or `PDN_ENCRYPTION_KEY`). The access token is renewed
+  automatically, so you don't need to sign in again unless the session is revoked
+  or you sign out.
 - **Optional app password**: a second, self-hosted layer on top of Proton
   sign-in. It gates the dashboard, the API, and the live event stream, and is
   stored only as a scrypt hash (never plaintext). It also protects the config
@@ -124,8 +126,8 @@ The app *must* be able to read the files it syncs: that is inherent to a sync
 tool, and during a session it holds your Proton keys to do the decrypt/encrypt.
 What it does **not** do: it stores no file *contents* locally (only paths and
 content hashes in the state DB), it sends data only to Proton's servers
-(encrypted with Proton's key model), and your Proton credentials are never kept
-in plaintext. The one thing to protect carefully is the `/config` volume ~
+(encrypted with Proton's key model), and your Proton password never reaches the
+app. The one thing to protect carefully is the `/config` volume ~
 treat it like your credentials, because the encrypted session blob lives there.
 
 ---
@@ -138,9 +140,8 @@ treat it like your credentials, because the encrypted session blob lives there.
   refresh token are never sent to a non-Proton host or over plain HTTP, and an
   unsafe `PROTON_DRIVE_BASE_URL` stops the app at startup.
 - **Session gating.** The encrypted session blob is written to disk only after
-  login fully completes (2FA + key derivation), and a partial blob (for example
-  from a restart mid-2FA) is rejected on resume rather than surfacing a
-  half-authenticated session.
+  sign-in fully completes (session and key passphrase received), and a partial
+  blob is rejected on resume rather than surfacing a half-authenticated session.
 - **App password.** An optional self-hosted password (scrypt-hashed, HMAC-signed
   session cookies) gates the dashboard, the API, and the live sync stream on top
   of the Proton login.
@@ -271,8 +272,6 @@ Be aware of these before relying on it:
   older kept as `filename (computer-name).ext`) - still no content-level merge.
 - **Dedupe is per-pair and local-only.** It finds duplicates within one pair's
   local folder, on demand: not across pairs, and not on the Drive side.
-- **Human verification is manual.** Proton's CAPTCHA challenge (rare, usually
-  one-time per account) requires a one-off browser step.
 - **Requires Docker.** Runs as a container with `/config` and `/data` mounts.
 
 ---

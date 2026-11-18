@@ -28,6 +28,28 @@ if (baseUrlError) {
 export const SDK_VERSION = 'js@0.23.0';
 
 /**
+ * Client ID sent in the browser sign-in ("session fork") link. Mirrors Proton's
+ * reference Drive CLI: third-party apps built on the SDK identify as
+ * `external-drive`, matching the `external-drive@...` APP_VERSION above.
+ */
+export const AUTH_CLIENT_ID = APP_VERSION.startsWith('cli-drive') ? 'cli-drive' : 'external-drive';
+
+/**
+ * Proton account host the browser sign-in link points at, derived from the API
+ * base URL the same way the reference CLI does (`drive-api.X` -> `account.X`).
+ * BASE_URL has already been validated as a Proton host above, so this is too.
+ */
+export const ACCOUNT_URL = accountUrlFromBaseUrl(BASE_URL);
+
+function accountUrlFromBaseUrl(baseUrl: string): string {
+    const host = baseUrl.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+    if (host.startsWith('drive-api.')) {
+        return host.replace(/^drive-api\./, 'account.');
+    }
+    return host.endsWith('.black') ? 'account.proton.black' : 'account.proton.me';
+}
+
+/**
  * Which cache backend the Drive SDK uses for its entity cache:
  *   `disk` (default) - persistent disk-backed cache (see CACHE_DIR), with an
  *                      in-memory LRU front sized by CACHE_LRU_MAX (0 = none).

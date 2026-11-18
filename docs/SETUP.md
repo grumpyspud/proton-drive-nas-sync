@@ -1,8 +1,8 @@
 # Setup Guide: Proton Drive NAS Sync
 
 A step-by-step first-time setup walkthrough with screenshots. Covers deploying the
-container, signing in to Proton Drive (including 2FA, two-password, and CAPTCHA),
-and using the dashboard.
+container, signing in to Proton Drive (in your browser, on Proton's own site), and
+using the dashboard.
 
 > **⚠️ Third-party application: not affiliated with, endorsed by, or supported by
 > Proton AG.** It's a good idea to test against a throwaway Proton account first.
@@ -77,67 +77,26 @@ scrypt hash: never in plaintext. You can change it later from the top bar
 
 ## 4. Sign in to Proton
 
-Enter your Proton username and password and press **Sign in**.
+Press **Sign in with Proton ↗**. A Proton page (`account.proton.me`) opens in a
+new tab: sign in there as usual, including your two-factor code or security key
+and, if your account uses one, your mailbox password. Any CAPTCHA is also handled
+on that page. Keep the app's page open; it continues automatically once Proton
+confirms the sign-in.
 
-![Proton sign-in](screenshots/01-landing-login.png)
+This is the same browser sign-in Proton's own Drive CLI uses. Your password and
+two-factor code are entered on Proton's site only and never reach this app.
 
-Depending on your account's security settings, Proton may walk you through one or
-more of the next steps. The order is: **CAPTCHA → two-factor code → mailbox
-password** (any step is skipped if you don't have it enabled).
-
----
-
-## 5. Human verification (CAPTCHA)
-
-If Proton flags the sign-in (common from a new IP or a fresh Docker container),
-you'll see this screen. It asks you to open Proton's verification page, run a small
-snippet in that page's console to capture the solved token, and paste the token
-back here.
-
-![CAPTCHA / human verification](screenshots/03-captcha.png)
-
-**Steps:**
-
-1. Click **Open verification ↗** to open the CAPTCHA page in a new tab.
-2. In *that* tab, open DevTools (`F12`) → **Console**, paste the snippet, and
-   solve the CAPTCHA.
-3. The snippet pops up your token (and copies it to the clipboard when allowed).
-4. Paste the token into **Verification token** here and press **Continue**.
-
-> **Note: the "Copy snippet" button may not copy.**
-> The button uses the browser clipboard API, which some browsers (notably
-> **Firefox**) may silently block. If nothing is copied, just select the code in
-> the box and copy it manually (`Ctrl+C` / right-click → Copy).
-
-> **Note: you may need to type `allow pasting` first.**
-> The first time you open the DevTools console on the verification tab, the browser
-> may block pasting and show an "allow pasting" notice. Type `allow pasting` and
-> press Enter, then paste the snippet. (Usually only needed once per browser.)
-
----
-
-## 6. Two-factor authentication (2FA)
-
-If your account has two-factor authentication enabled, enter your authenticator
-code:
-
-![Two-factor code](screenshots/04-two-factor.png)
-
----
-
-## 7. Mailbox password (two-password mode)
-
-Proton accounts created with two-password mode ask for a second "mailbox
-password" that encrypts your data:
-
-![Mailbox password](screenshots/05-mailbox-password.png)
+- If the tab doesn't open (popup blocker), use **Open Proton sign-in ↗**.
+- You can also open the link on another device, for example your phone.
+- The link works for 10 minutes. Don't share it: whoever signs in with it connects
+  their Proton account to the app.
 
 After this, you're signed in. The session is persisted as an AES-256-GCM encrypted
 blob in `/config`, so you won't be prompted again on restarts.
 
 ---
 
-## 8. The dashboard
+## 5. The dashboard
 
 This is your home base:
 
@@ -160,16 +119,16 @@ The top bar holds the global controls:
 - **⏹ Stop** (shown only while syncing): stop the current sync.
 - **＋ Create Sync Pair**: add a folder pair.
 - **🖥 Device syncs**: sync a NAS folder with your computers (Proton Drive
-  "Computers" devices). See [step 9a](#9a-device-syncs-computers--optional).
+  "Computers" devices). See [step 6a](#6a-device-syncs-computers--optional).
 - **Logs ▾**: open the **Sync log**, **Activity log**, or **Error log** (see
-  [step 13](#13-viewing-logs)).
+  [step 10](#10-viewing-logs)).
 - **⚙ Settings**: **💾 Backup**, **🔒 App password**, **🔐 Lock**,
   **☀ Light / 🌙 Dark**, and **Max concurrent transfers**.
 - **Sign out**: signs out of Proton and removes all folder pairs (with a confirmation pop-up; your synced files are not touched).
 
 ---
 
-## 9. Add a folder pair
+## 6. Add a folder pair
 
 Click **＋ Create Sync Pair** in the top bar, then browse (or type) the local
 folder on the NAS and the matching Proton Drive folder:
@@ -193,7 +152,7 @@ Click **Create pair**. The pair starts syncing automatically in "real time"; the
 
 ---
 
-## 9a. Device syncs (Computers) — optional
+## 6a. Device syncs (Computers) — optional
 
 To mirror a NAS folder with the folders Proton Drive syncs from your **computers**
 (the machines running the Proton Drive desktop app), open **🖥 Device syncs** in
@@ -212,7 +171,7 @@ reference.
 
 ---
 
-## 10. Locking the app
+## 7. Locking the app
 
 **🔐 Lock** re-locks the app password gate without signing you out of Proton.
 Re-enter the app password to continue:
@@ -221,7 +180,7 @@ Re-enter the app password to continue:
 
 ---
 
-## 11. Back up your config
+## 8. Back up your config
 
 **💾 Backup** exports a single encrypted file containing your folder pairs, the
 Proton session, and the encryption key. This is how you move or rebuild the app
@@ -241,7 +200,7 @@ still can't open it without your secrets. Download it and store it somewhere saf
 
 ---
 
-## 12. Restore your config
+## 9. Restore your config
 
 Restore is available from the sign-in / unlock screen (before any Proton login) ~
 exactly where you'd need it on a fresh NAS or rebuild.
@@ -262,7 +221,7 @@ To restore:
 
 ---
 
-## 13. Viewing logs
+## 10. Viewing logs
 
 The **Logs ▾** menu has three views:
 
@@ -296,7 +255,7 @@ are written here as well, so they're never lost.
 
 ---
 
-## 14. Light / dark theme
+## 11. Light / dark theme
 
 The UI defaults to dark. Toggle **☀ Light / 🌙 Dark** in the top bar:
 
@@ -304,7 +263,7 @@ The UI defaults to dark. Toggle **☀ Light / 🌙 Dark** in the top bar:
 
 ---
 
-## 15. Updating
+## 12. Updating
 
 ```bash
 git pull
@@ -320,5 +279,6 @@ the build step with `docker compose pull`.
 ## Troubleshooting
 
 See [DEPLOY.md](DEPLOY.md) for the full list (healthcheck, logs, Proton rate
-limiting, port conflicts). The CAPTCHA-specific notes are in
-[step 5](#5-human-verification-captcha) above.
+limiting, port conflicts). If sign-in doesn't continue after you signed in on
+Proton's page, check that the app's tab was still open and the link was less than
+10 minutes old, then press **Sign in with Proton ↗** again.

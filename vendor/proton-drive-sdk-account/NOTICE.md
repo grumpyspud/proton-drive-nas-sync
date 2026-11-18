@@ -14,10 +14,11 @@ npm registry yet. The module implements the SRP login, session management, and
 account/address API access that `@protontech/drive-sdk` requires but does not
 itself provide.
 
-The code is reproduced **verbatim** (no edits). The extensions this project
-needs on top of it: TOTP two-factor authentication and two-password-mode
-support: live in `src/auth/login.ts` and are deliberately kept out of this
-directory, so it can be cleanly re-vendored when upstream updates.
+The code is reproduced **verbatim** (no edits). The app signs in with this
+module's own browser sign-in (`Auth.authViaWeb`). The password-based login in
+`src/auth/login.ts` (TOTP two-factor and two-password-mode support) is only used
+by the developer CLI scripts in `src/cli/`, and is deliberately kept out of this
+directory so it can be cleanly re-vendored when upstream updates.
 
 To re-vendor: copy `incubating/account/js/src/*.ts` from the SDK repo into this
 directory, replacing all files.
