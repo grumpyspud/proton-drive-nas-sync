@@ -1,4 +1,13 @@
 import { Auth } from '../../vendor/proton-drive-sdk-account/auth';
+import {
+    beginLogin,
+    completeLogin,
+    HumanVerificationRequiredError,
+    MailboxPasswordRequiredError,
+    TwoFactorRequiredError,
+    type LoginOptions,
+    type PendingLogin,
+} from '../auth/login';
 import { ACCOUNT_URL, AUTH_CLIENT_ID } from '../config';
 import { logger } from '../logger';
 import { resetCryptoBackend } from '../proton/cryptoBackend';
@@ -10,6 +19,19 @@ export interface WebLoginState {
     status: 'idle' | 'pending' | 'authenticated' | 'failed' | 'cancelled';
     /** Epoch ms when the current sign-in link was issued (pending only). */
     startedAt?: number;
+    uid?: string;
+    error?: string;
+}
+
+/** Result of an in-app (SRP) login attempt, as reported to the UI. */
+export interface LoginResponse {
+    authenticated: boolean;
+    twoFactorRequired?: boolean;
+    mailboxPasswordRequired?: boolean;
+    humanVerificationRequired?: boolean;
+    webUrl?: string;
+    humanVerificationToken?: string;
+    methods?: string[];
     uid?: string;
     error?: string;
 }
@@ -30,12 +52,19 @@ export class AlreadySignedInError extends Error {
  * Holds the server's single Proton session. Signing in persists an AES-256-GCM
  * encrypted session blob so a restart can resume without signing in again.
  *
- * Sign-in only happens in the browser, on account.proton.me (see
- * `startWebLogin`): the password, 2FA code and mailbox password never reach
- * this app.
+ * Two sign-in methods are available, selected at startup by `PDN_AUTH_METHOD`:
+ *   - `browser` (default): sign in on account.proton.me ("session fork") and
+ *     Proton hands this app a session. The password, 2FA code and mailbox
+ *     password never reach this app (see `startWebLogin`).
+ *   - `srp`: the original in-app username/password form. Login is a multi-step
+ *     flow (password -> CAPTCHA -> 2FA -> two-password); the intermediate state
+ *     (scoped access token + SRP proof result) is held in `pendingSession` /
+ *     `pending` between steps so the follow-up steps never re-issue /auth.
  */
 class AuthService {
     private session: ProtonSession | null = null;
+    private pendingSession: ProtonSession | null = null;
+    private pending: PendingLogin | null = null;
     private webLogin: WebLoginAttempt | null = null;
 
     isAuthenticated(): boolean {
@@ -45,6 +74,68 @@ class AuthService {
     getSession(): ProtonSession {
         if (!this.session) throw new Error('Not authenticated');
         return this.session;
+    }
+
+    /**
+     * In-app SRP login (PDN_AUTH_METHOD=srp). Multi-step: phase 1 (auth/info +
+     * auth), then CAPTCHA / 2FA / two-password as Proton demands. Returns the
+     * state needed to drive the next step (or `authenticated: true` on success).
+     */
+    async login(
+        username: string,
+        password: string,
+        twoFactorCode?: string,
+        mailboxPassword?: string,
+        humanVerificationToken?: string,
+    ): Promise<LoginResponse> {
+        try {
+            // Mid-flow: continue from the pending state (2FA / two-password).
+            if (this.pending && this.pendingSession) {
+                const result = await completeLogin(this.pendingSession, this.pending, logger, twoFactorCode, mailboxPassword);
+                this.session = this.pendingSession;
+                this.pendingSession = null;
+                this.pending = null;
+                logger.info(`Logged in as ${username} (uid=${result.uid})`);
+                return { authenticated: true, uid: result.uid };
+            }
+
+            // Fresh login: build a session and run phase 1 (auth/info + auth).
+            const credentials = createSessionCredentials({ persist: true });
+            const session = await buildSession(credentials, logger);
+            const options: LoginOptions = { username, password, humanVerificationToken };
+            const pending = await beginLogin(session, logger, options);
+            this.pendingSession = session;
+            this.pending = pending;
+
+            const result = await completeLogin(session, pending, logger, twoFactorCode, mailboxPassword);
+            this.session = session;
+            this.pendingSession = null;
+            this.pending = null;
+            logger.info(`Logged in as ${username} (uid=${result.uid})`);
+            return { authenticated: true, uid: result.uid };
+        } catch (error) {
+            if (error instanceof HumanVerificationRequiredError) {
+                return {
+                    authenticated: false,
+                    humanVerificationRequired: true,
+                    webUrl: error.details.webUrl,
+                    humanVerificationToken: error.details.token,
+                    methods: error.details.methods,
+                };
+            }
+            if (error instanceof TwoFactorRequiredError) {
+                return { authenticated: false, twoFactorRequired: true };
+            }
+            if (error instanceof MailboxPasswordRequiredError) {
+                return { authenticated: false, mailboxPasswordRequired: true };
+            }
+            const message = (error as Error).message ?? String(error);
+            logger.error('Login failed', error);
+            // Hard failure: drop any partial state so the next attempt starts fresh.
+            this.pendingSession = null;
+            this.pending = null;
+            return { authenticated: false, error: message };
+        }
     }
 
     /**
@@ -147,6 +238,8 @@ class AuthService {
             await this.session.credentials.signOut().catch(() => {});
         }
         this.session = null;
+        this.pendingSession = null;
+        this.pending = null;
         resetCryptoBackend();
         logger.info('Logged out');
     }

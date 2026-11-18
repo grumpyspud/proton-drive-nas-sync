@@ -7,7 +7,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configDir, loadMasterKey } from '../crypto/keySource';
-import { DELTA_ENABLED, REALTIME_INTERVAL_SECONDS, FULL_SCAN_INTERVAL } from '../config';
+import { AUTH_METHOD, DELTA_ENABLED, REALTIME_INTERVAL_SECONDS, FULL_SCAN_INTERVAL } from '../config';
 import { listLocalDir, mkdirLocal } from '../fs/browse';
 import { isReservedDirName } from '../fs/reserved';
 import { dataMountPaths, isSafeLocalPath } from '../fs/volumes';
@@ -423,37 +423,53 @@ app.use('/api', appAuthGate);
 app.get('/api/auth/status', async (_req, res) => {
     if (!authService.isAuthenticated()) await authService.resume();
     if (authService.isAuthenticated()) {
-        res.json({ authenticated: true, uid: authService.getSession().credentials.uid });
+        res.json({ authenticated: true, uid: authService.getSession().credentials.uid, authMethod: AUTH_METHOD });
     } else {
-        res.json({ authenticated: false });
+        res.json({ authenticated: false, authMethod: AUTH_METHOD });
     }
 });
+
+// ---- in-app SRP sign-in (only when PDN_AUTH_METHOD=srp) ----
+if (AUTH_METHOD === 'srp') {
+    app.post('/api/auth/login', async (req, res) => {
+        const body = req.body ?? {};
+        const { username, password, twoFactorCode, mailboxPassword, humanVerificationToken } = body as Record<string, string | undefined>;
+        if (!username || !password) {
+            res.status(400).json({ error: 'username and password are required' });
+            return;
+        }
+        const result = await authService.login(username, password, twoFactorCode, mailboxPassword, humanVerificationToken);
+        res.json(result);
+    });
+}
 
 // Sign-in happens only in the browser: the user signs in on account.proton.me
 // and Proton hands this app a session, so the password never reaches this
 // server (there is deliberately no password endpoint). The returned link
 // carries a one-time key in its #fragment: it must only be opened by the user.
-app.post('/api/auth/web/start', async (_req, res) => {
-    try {
-        res.json(await authService.startWebLogin());
-    } catch (err) {
-        if (err instanceof AlreadySignedInError) {
-            res.status(409).json({ error: err.message });
-            return;
+if (AUTH_METHOD === 'browser') {
+    app.post('/api/auth/web/start', async (_req, res) => {
+        try {
+            res.json(await authService.startWebLogin());
+        } catch (err) {
+            if (err instanceof AlreadySignedInError) {
+                res.status(409).json({ error: err.message });
+                return;
+            }
+            logger.error('Could not start browser sign-in', err);
+            res.status(502).json({ error: `Could not start browser sign-in: ${(err as Error).message}` });
         }
-        logger.error('Could not start browser sign-in', err);
-        res.status(502).json({ error: `Could not start browser sign-in: ${(err as Error).message}` });
-    }
-});
+    });
 
-app.get('/api/auth/web/status', (_req, res) => {
-    res.json(authService.getWebLoginState());
-});
+    app.get('/api/auth/web/status', (_req, res) => {
+        res.json(authService.getWebLoginState());
+    });
 
-app.post('/api/auth/web/cancel', (_req, res) => {
-    authService.cancelWebLogin();
-    res.json({ ok: true });
-});
+    app.post('/api/auth/web/cancel', (_req, res) => {
+        authService.cancelWebLogin();
+        res.json({ ok: true });
+    });
+}
 
 class SyncBusyError extends Error {}
 

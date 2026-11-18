@@ -11,6 +11,7 @@ export type Theme = 'dark' | 'light';
 interface AuthState {
     authenticated: boolean;
     uid?: string;
+    authMethod?: 'browser' | 'srp';
 }
 
 export function App() {
@@ -36,7 +37,7 @@ export function App() {
         getAuthStatus()
             .then((s) => {
                 setConnectionError(false);
-                setAuth({ authenticated: s.authenticated, uid: s.uid });
+                setAuth({ authenticated: s.authenticated, uid: s.uid, authMethod: s.authMethod });
             })
             .catch((err) => {
                 // A network failure is not a logout: don't drop the user to the
@@ -87,6 +88,7 @@ export function App() {
                 theme={theme}
                 onToggleTheme={toggleTheme}
                 onLogin={(uid) => setAuth({ authenticated: true, uid })}
+                authMethod={auth.authMethod ?? 'browser'}
                 appPasswordEnabled={appAuth.enabled}
                 onSetAppPassword={() => setShowSetPassword(true)}
                 onRestore={() => setShowRestore(true)}

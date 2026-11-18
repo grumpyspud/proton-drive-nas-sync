@@ -41,10 +41,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export interface AuthStatus {
     authenticated: boolean;
     uid?: string;
+    authMethod: 'browser' | 'srp';
 }
 
 export function getAuthStatus(): Promise<AuthStatus> {
     return request<AuthStatus>('/api/auth/status');
+}
+
+export interface LoginResult {
+    authenticated: boolean;
+    twoFactorRequired?: boolean;
+    mailboxPasswordRequired?: boolean;
+    humanVerificationRequired?: boolean;
+    webUrl?: string;
+    humanVerificationToken?: string;
+    methods?: string[];
+    uid?: string;
+    error?: string;
+}
+
+export function login(username: string, password: string, twoFactorCode?: string, mailboxPassword?: string, humanVerificationToken?: string): Promise<LoginResult> {
+    return request<LoginResult>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password, twoFactorCode, mailboxPassword, humanVerificationToken }),
+    });
 }
 
 export interface WebLoginState {

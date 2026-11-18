@@ -96,6 +96,7 @@ are never written to disk. On restart the app resumes the session automatically.
 | `PDN_CONFIG_DIR` | `/config` | Where the session blob + sync DB live. |
 | `PDN_ENCRYPTION_KEY` | *(auto-provision)* | 64-hex-char (32-byte) key encrypting the session blob. Generate with `openssl rand -hex 32`. |
 | `PDN_APP_PASSWORD` | *(unset)* | Seed the app password on **first run only**. After that, in-app changes are the source of truth and this var is ignored. |
+| `PDN_AUTH_METHOD` | `browser` | How to sign in to Proton. `browser` (default) opens Proton's own sign-in page, so the password, 2FA code and mailbox password never reach this app. `srp` restores the original in-app username/password form - headless and scriptable, but credentials transit the app's memory and the CAPTCHA needs a devtools-console step. |
 | `PDN_PORT` | `8787` | Listen port (change the compose `ports` mapping to match). |
 | `PDN_TLS_CERT` | *(auto self-signed)* | Path to a PEM TLS certificate (use with `PDN_TLS_KEY`) to serve HTTPS with your own cert. |
 | `PDN_TLS_KEY` | *(auto self-signed)* | Path to the matching PEM TLS private key. |

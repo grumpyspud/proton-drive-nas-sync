@@ -50,6 +50,17 @@ function accountUrlFromBaseUrl(baseUrl: string): string {
 }
 
 /**
+ * Which sign-in method the app offers:
+ *   `browser` (default) - sign in on account.proton.me ("session fork"); the
+ *                         password/2FA/mailbox password never reach this app.
+ *   `srp`      - the original in-app username/password form (SRP). Headless and
+ *                scriptable, but credentials transit the app's memory and the
+ *                CAPTCHA needs a devtools-console step.
+ */
+export type AuthMethod = 'browser' | 'srp';
+export const AUTH_METHOD: AuthMethod = (process.env.PDN_AUTH_METHOD ?? 'browser').trim().toLowerCase() === 'srp' ? 'srp' : 'browser';
+
+/**
  * Which cache backend the Drive SDK uses for its entity cache:
  *   `disk` (default) - persistent disk-backed cache (see CACHE_DIR), with an
  *                      in-memory LRU front sized by CACHE_LRU_MAX (0 = none).
