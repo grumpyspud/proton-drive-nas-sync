@@ -53,9 +53,9 @@ function accountUrlFromBaseUrl(baseUrl: string): string {
  * Which sign-in method the app offers:
  *   `browser` (default) - sign in on account.proton.me ("session fork"); the
  *                         password/2FA/mailbox password never reach this app.
- *   `srp`      - the original in-app username/password form (SRP). Headless and
- *                scriptable, but credentials transit the app's memory and the
- *                CAPTCHA needs a devtools-console step.
+ *   `srp`      - the original in-app username/password form (SRP). Credentials
+ *                transit the app's memory and the CAPTCHA needs a
+ *                devtools-console step.
  */
 export type AuthMethod = 'browser' | 'srp';
 export const AUTH_METHOD: AuthMethod = (process.env.PDN_AUTH_METHOD ?? 'browser').trim().toLowerCase() === 'srp' ? 'srp' : 'browser';
