@@ -47,6 +47,9 @@ serves HTTPS by default: see [HTTPS](#https).)
 
 ### Example compose override for a NAS
 
+> On **TrueNAS SCALE**, see [TRUENAS.md](TRUENAS.md) for a step-by-step custom
+> app setup (datasets, permissions, YAML, updates, troubleshooting).
+
 On most NAS devices, shared folders live under a path such as `/media` or
 `/volume1`. Point `/data` at the share you want to sync, and keep `/config` on
 persistent storage:
